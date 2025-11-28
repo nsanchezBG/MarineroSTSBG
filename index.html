@@ -8,13 +8,13 @@
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- CONFIGURACIÓN TAILWIND: Registramos la fuente Pixelify -->
+    <!-- CONFIGURACIÓN TAILWIND: Registramos la fuente Jersey 10 -->
     <script>
       tailwind.config = {
         theme: {
           extend: {
             fontFamily: {
-              pixel: ['"Pixelify Sans"', 'cursive', 'sans-serif'],
+              pixel: ['"Jersey 10"', 'sans-serif'],
             },
           },
         },
@@ -24,7 +24,7 @@
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Jersey+10&display=swap" rel="stylesheet">
     
     <!-- Babel for JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -35,7 +35,7 @@
         margin: 0;
         padding: 0;
         background-color: #020617; /* Slate 950 */
-        font-family: 'Pixelify Sans', cursive, sans-serif !important;
+        font-family: 'Jersey 10', sans-serif !important; /* Changed to Jersey 10 */
         touch-action: none; /* Prevent scroll/zoom on mobile */
         overflow: hidden; 
         width: 100%;
@@ -91,8 +91,7 @@
         animation: heartbeat 2s infinite ease-in-out;
       }
 
-      /* --- NUEVO: PIXEL ART CORNERS (Escalonado) --- */
-      /* Esto recorta las esquinas en forma de "muesca" de 4px */
+      /* --- PIXEL ART CORNERS (Escalonado) --- */
       .pixel-clip {
         clip-path: polygon(
           0px 4px, 4px 4px, 4px 0px,
@@ -120,7 +119,7 @@
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect, useRef, useCallback } from 'react';
         import { createRoot } from 'react-dom/client';
-        import { Trash2, Award, Play, RotateCcw, ChevronLeft, ChevronRight, ArrowUp, Skull } from 'lucide-react';
+        import { Trash2, Award, Play, RotateCcw, ChevronLeft, ChevronRight, ArrowUp, Skull, Lock } from 'lucide-react';
 
         // ==========================================
         // 1. ASSETS & CONSTANTS
@@ -128,12 +127,21 @@
         
         const GAME_ASSETS = {
             LOGO: "https://raw.githubusercontent.com/nsanchezBG/MarineroSTSBG/main/logo1.png",
-            PLAYER: "https://raw.githubusercontent.com/nsanchezBG/MarineroSTSBG/main/MateoPlayer.gif",
             
+            // CHARACTERS
+            PLAYER_MATEO: "https://raw.githubusercontent.com/nsanchezBG/MarineroSTSBG/main/MateoPlayer.gif",
+            PLAYER_ANA: "https://raw.githubusercontent.com/nsanchezBG/MarineroSTSBG/main/ana1.gif",
+            
+            // POWER UPS
+            POWER_CAN: "https://raw.githubusercontent.com/nsanchezBG/MarineroSTSBG/main/lata1.png",
+            POWER_BUBBLE: "https://raw.githubusercontent.com/nsanchezBG/MarineroSTSBG/main/bubble1.png",
+
             // AUDIO
             MUSIC_BG: "https://raw.githubusercontent.com/nsanchezBG/MarineroSTSBG/408efe5d77d229042ea878ad5cdd219df39c73ce/Untitled.mp3",
             SFX_COLLECT: "https://raw.githubusercontent.com/nsanchezBG/MarineroSTSBG/ec7e957306cc84aaca09b7ae617afd65bf33f921/obj.wav",
             SFX_EXPLOSION: "https://raw.githubusercontent.com/nsanchezBG/MarineroSTSBG/ec7e957306cc84aaca09b7ae617afd65bf33f921/explosion.wav",
+            SFX_POWERUP: "https://raw.githubusercontent.com/nsanchezBG/MarineroSTSBG/4d481af71e4a117e675f085b04748bb23394c7f1/powerup1.wav",
+            SFX_POWER_DESTROY: "https://raw.githubusercontent.com/nsanchezBG/MarineroSTSBG/4d481af71e4a117e675f085b04748bb23394c7f1/powerupdestroy1.wav",
 
             // BASURA
             TRASH_BOTTLE: "https://raw.githubusercontent.com/nsanchezBG/MarineroSTSBG/main/botella.png",
@@ -188,7 +196,7 @@
         // 2. COMPONENT: GAME CANVAS
         // ==========================================
 
-        const GameCanvas = ({ status, onScoreUpdate, onGameOver, playSfx, sessionId }) => {
+        const GameCanvas = ({ status, onScoreUpdate, onGameOver, playSfx, sessionId, playerSrc }) => {
             const canvasRef = useRef(null);
             const domPlayerRef = useRef(null);
             const requestRef = useRef(0);
@@ -203,8 +211,9 @@
             // --- 2a. Load Assets ---
             useEffect(() => {
                 const loaded = {};
-                // Filter out audio assets
-                const keys = Object.keys(GAME_ASSETS).filter(k => k !== 'PLAYER' && !k.startsWith('MUSIC') && !k.startsWith('SFX'));
+                // We filter out any keys starting with PLAYER so we don't load them here unnecessarily
+                // The actual player image is handled via DOM overlay with the 'playerSrc' prop
+                const keys = Object.keys(GAME_ASSETS).filter(k => !k.startsWith('PLAYER_') && !k.startsWith('MUSIC') && !k.startsWith('SFX'));
                 let count = 0;
                 
                 if (keys.length === 0) return;
@@ -228,7 +237,7 @@
 
             // --- 2b. Game State ---
             const gameState = useRef({
-                player: { x: 50, y: LOGICAL_HEIGHT/2, vx: 0, vy: 0, width: 80, height: 80, invincible: 0 },
+                player: { x: 50, y: LOGICAL_HEIGHT/2, vx: 0, vy: 0, width: 80, height: 80, invincible: 0, bubbleTimer: 0 },
                 entities: [],
                 decorations: [],
                 particles: [],
@@ -256,10 +265,10 @@
                 };
             }, []);
             
-            // --- 2d. Reset Logic (FIXED) ---
+            // --- 2d. Reset Logic ---
             useEffect(() => {
                  gameState.current = {
-                    player: { x: 50, y: LOGICAL_HEIGHT/2, vx: 0, vy: 0, width: 80, height: 80, invincible: 0 },
+                    player: { x: 50, y: LOGICAL_HEIGHT/2, vx: 0, vy: 0, width: 80, height: 80, invincible: 0, bubbleTimer: 0 },
                     entities: [],
                     decorations: [],
                     particles: [],
@@ -280,20 +289,21 @@
                 frameCountRef.current++;
                 const fc = frameCountRef.current;
 
-                // Spawners
-                if (fc % 100 === 0) { // Trash
+                // --- SPAWNERS ---
+                if (fc % 100 === 0) { 
                     const types = ['TRASH_BOTTLE', 'TRASH_TIRE', 'TRASH_BAG', 'TRASH_BOOT'];
                     const type = types[Math.floor(Math.random()*types.length)];
                     state.entities.push({
                         type, id: Math.random(), 
                         x: LOGICAL_WIDTH + 50, 
-                        y: Math.random() * (LOGICAL_HEIGHT - 300) + 100, // Safe zone
+                        y: Math.random() * (LOGICAL_HEIGHT - 300) + 100, 
                         w: 60, h: 60, 
                         vx: -2 - Math.random(), vy: 0, 
                         asset: type
                     });
                 }
-                if (fc % 180 === 0) { // Enemies
+                
+                if (fc % 180 === 0) { 
                     const types = ['ENEMY_JELLYFISH', 'ENEMY_SHARK'];
                     const type = types[Math.floor(Math.random()*types.length)];
                     const isShark = type === 'ENEMY_SHARK';
@@ -307,8 +317,19 @@
                         asset: type
                     });
                 }
+
+                if (fc % 600 === 0 && Math.random() > 0.3) {
+                    state.entities.push({
+                        type: 'POWER_UP',
+                        id: Math.random(),
+                        x: LOGICAL_WIDTH + 50,
+                        y: Math.random() * (LOGICAL_HEIGHT - 300) + 100,
+                        w: 50, h: 70, 
+                        vx: -3, vy: Math.sin(fc/20)*1, 
+                        asset: 'POWER_CAN'
+                    });
+                }
                 
-                // Decorations
                 if (fc >= nextDecoSpawnRef.current) { 
                     const algae = ['DECO_ALGA_1', 'DECO_ALGA_2', 'DECO_ALGA_3'];
                     const corals = ['DECO_CORAL_1', 'DECO_CORAL_2', 'DECO_CORAL_3', 'DECO_CORAL_4', 'DECO_CORAL_5'];
@@ -332,7 +353,6 @@
                     nextDecoSpawnRef.current = fc + Math.floor(Math.random() * 80) + 40;
                 }
 
-                // Ambient Bubbles
                 if (fc % 15 === 0) {
                      state.particles.push({
                         x: Math.random() * LOGICAL_WIDTH, 
@@ -342,7 +362,7 @@
                     });
                 }
 
-                // Physics
+                // --- PHYSICS ---
                 let swim = false;
                 if (keys.has('ArrowUp') || keys.has(' ') || keys.has('w')) swim = true;
                 
@@ -352,7 +372,6 @@
 
                 if (swim) {
                     player.vy += SWIM_FORCE * 0.15;
-                    // Player Bubbles
                     if (fc % 5 === 0) state.particles.push({
                         x: player.x + (facingRef.current === 'RIGHT' ? 0 : player.width), 
                         y: player.y + 40, 
@@ -362,7 +381,8 @@
                 }
 
                 if (dx !== 0) {
-                    player.vx += dx * 0.5;
+                    // MODIFICADO: Reduje la aceleración de 0.5 a 0.2 para controles más suaves
+                    player.vx += dx * 0.2; 
                     facingRef.current = dx > 0 ? 'RIGHT' : 'LEFT';
                 }
 
@@ -379,14 +399,15 @@
                 if (player.x < 0) { player.x = 0; player.vx = 0; }
                 if (player.x > LOGICAL_WIDTH - player.width) { player.x = LOGICAL_WIDTH - player.width; player.vx = 0; }
 
+                // Decrement Counters
                 if (player.invincible > 0) player.invincible--;
+                if (player.bubbleTimer > 0) player.bubbleTimer--;
 
-                // Entity Logic
+                // --- ENTITY LOGIC ---
                 state.entities.forEach(e => {
                     e.x += e.vx;
                     e.y += e.vy;
 
-                    // Particles for enemies
                     if (e.asset === 'ENEMY_SHARK' && fc % 4 === 0) {
                         state.particles.push({
                             x: e.x + e.w - 10, y: e.y + e.h / 2,
@@ -397,6 +418,11 @@
                          state.particles.push({
                             x: e.x + e.w / 2, y: e.y + e.h - 10,
                             vx: 0, vy: 1, life: 40, color: 'rgba(255,255,255,0.3)', w: 3, h: 3
+                        });
+                    } else if (e.type === 'POWER_UP' && fc % 10 === 0) {
+                         state.particles.push({
+                            x: e.x + Math.random()*e.w, y: e.y + Math.random()*e.h,
+                            vx: 0, vy: -1, life: 20, color: '#fbbf24', w: 4, h: 4
                         });
                     }
                     
@@ -424,9 +450,30 @@
                                 vx: (Math.random()-0.5)*12, vy: (Math.random()-0.5)*12, 
                                 life: 30, color: pColor, w: 8, h:8
                             });
-                        } else if (e.type.startsWith('ENEMY') && player.invincible === 0) {
-                            playSfx('EXPLOSION');
-                            onGameOver(state.score);
+                        } 
+                        else if (e.type === 'POWER_UP') {
+                            e.delete = true;
+                            player.bubbleTimer = 600; 
+                            playSfx('POWERUP'); 
+                            for(let i=0; i<15; i++) state.particles.push({
+                                x: player.x + player.width/2, y: player.y + player.height/2, 
+                                vx: (Math.random()-0.5)*15, vy: (Math.random()-0.5)*15, 
+                                life: 45, color: '#fcd34d', w: 6, h:6
+                            });
+                        }
+                        else if (e.type.startsWith('ENEMY')) {
+                            if (player.bubbleTimer > 0) {
+                                e.delete = true;
+                                playSfx('POWER_DESTROY'); 
+                                for(let i=0; i<10; i++) state.particles.push({
+                                    x: e.x + e.w/2, y: e.y + e.h/2, 
+                                    vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10, 
+                                    life: 30, color: '#60a5fa', w: 6, h:6
+                                });
+                            } else if (player.invincible === 0) {
+                                playSfx('EXPLOSION');
+                                onGameOver(state.score);
+                            }
                         }
                     }
                     if (e.x < -150) e.delete = true;
@@ -469,7 +516,6 @@
                 if (images['BG_LAYER']) {
                     const scrollSpeed = 0.5;
                     const bgX = -(frameCountRef.current * scrollSpeed) % LOGICAL_WIDTH;
-                    // Draw twice for infinite loop, overlap by 2px to fix gap
                     ctx.drawImage(images['BG_LAYER'], Math.floor(bgX), 0, LOGICAL_WIDTH + 2, LOGICAL_HEIGHT);
                     ctx.drawImage(images['BG_LAYER'], Math.floor(bgX) + LOGICAL_WIDTH - 2, 0, LOGICAL_WIDTH + 2, LOGICAL_HEIGHT);
                 }
@@ -482,11 +528,13 @@
                 state.decorations.forEach(d => {
                     if (images[d.asset]) ctx.drawImage(images[d.asset], d.x, d.y, d.w, d.h);
                 });
-
+                
                 // Entities
                 state.entities.forEach(e => {
                     if (images[e.asset]) {
-                        ctx.drawImage(images[e.asset], e.x, e.y, e.w, e.h);
+                        let yOffset = 0;
+                        if (e.type === 'POWER_UP') yOffset = Math.sin(frameCountRef.current / 10) * 5;
+                        ctx.drawImage(images[e.asset], e.x, e.y + yOffset, e.w, e.h);
                     } else {
                         ctx.fillStyle = 'red'; ctx.fillRect(e.x, e.y, e.w, e.h);
                     }
@@ -498,14 +546,27 @@
                     ctx.fillRect(p.x, p.y, p.w, p.h);
                 });
 
-                // Player DOM Overlay Sync
+                // BUBBLE DRAWING
                 const p = state.player;
+                if (p.bubbleTimer > 0 && images['POWER_BUBBLE']) {
+                    const pulse = Math.sin(frameCountRef.current / 10) * 5;
+                    ctx.globalAlpha = 0.7;
+                    ctx.drawImage(
+                        images['POWER_BUBBLE'], 
+                        p.x - 20 - pulse/2, 
+                        p.y - 20 - pulse/2, 
+                        p.width + 40 + pulse, 
+                        p.height + 40 + pulse
+                    );
+                    ctx.globalAlpha = 1.0;
+                }
+
+                // Player DOM Overlay Sync
                 if (domPlayerRef.current) {
                     const domEl = domPlayerRef.current;
                     if (status === 'PLAYING' || status === 'PAUSED') {
                         domEl.style.display = 'block';
                         
-                        // Use Percentage for Responsive Positioning
                         const leftPct = (p.x / LOGICAL_WIDTH) * 100;
                         const topPct = (p.y / LOGICAL_HEIGHT) * 100;
                         const wPct = (p.width / LOGICAL_WIDTH) * 100;
@@ -548,7 +609,7 @@
                     />
                     <img 
                         ref={domPlayerRef}
-                        src={GAME_ASSETS.PLAYER}
+                        src={playerSrc}
                         className="absolute pointer-events-none hidden"
                         alt="Player"
                         style={{
@@ -570,11 +631,14 @@
             const [highScore, setHighScore] = useState(0);
             const [gameOverMsg, setGameOverMsg] = useState(null);
             const [sessionId, setSessionId] = useState(0); 
+            const [selectedChar, setSelectedChar] = useState('MATEO');
             
             // Audio Refs
             const musicRef = useRef(new Audio(GAME_ASSETS.MUSIC_BG));
             const sfxCollectRef = useRef(new Audio(GAME_ASSETS.SFX_COLLECT));
             const sfxExplosionRef = useRef(new Audio(GAME_ASSETS.SFX_EXPLOSION));
+            const sfxPowerUpRef = useRef(new Audio(GAME_ASSETS.SFX_POWERUP));
+            const sfxPowerDestroyRef = useRef(new Audio(GAME_ASSETS.SFX_POWER_DESTROY));
 
             // Init Audio
             useEffect(() => {
@@ -582,18 +646,44 @@
                 musicRef.current.volume = 0.4;
                 sfxCollectRef.current.volume = 0.6;
                 sfxExplosionRef.current.volume = 0.7;
+                sfxPowerUpRef.current.volume = 0.7;
+                sfxPowerDestroyRef.current.volume = 0.7;
+
+                // TRY AUTOPLAY
+                const playMusic = async () => {
+                    try {
+                        await musicRef.current.play();
+                    } catch (err) {
+                        console.log("Audio autoplay blocked. Waiting for interaction.");
+                    }
+                };
+                playMusic();
+
+                // FALLBACK: PLAY ON FIRST CLICK
+                const unlockAudio = () => {
+                    musicRef.current.play().catch(e=>{});
+                    window.removeEventListener('click', unlockAudio);
+                    window.removeEventListener('touchstart', unlockAudio);
+                };
+                
+                window.addEventListener('click', unlockAudio);
+                window.addEventListener('touchstart', unlockAudio);
+
+                return () => {
+                    window.removeEventListener('click', unlockAudio);
+                    window.removeEventListener('touchstart', unlockAudio);
+                };
             }, []);
 
-            // Audio Logic
+            // Audio Logic Update: ONLY PAUSE IF EXPLICITLY PAUSED
             useEffect(() => {
                 const music = musicRef.current;
-                if (status === 'PLAYING') {
-                    music.play().catch(e => console.log("Audio play blocked until interaction"));
-                } else if (status === 'PAUSED') {
+                
+                if (status === 'PAUSED') {
                     music.pause();
-                } else if (status === 'GAME_OVER' || status === 'START') {
-                    music.pause();
-                    music.currentTime = 0;
+                } else {
+                    // Try to play in all other states (START, PLAYING, GAME_OVER)
+                    music.play().catch(e => {}); 
                 }
             }, [status]);
             
@@ -604,6 +694,12 @@
                 } else if (type === 'EXPLOSION') {
                     sfxExplosionRef.current.currentTime = 0;
                     sfxExplosionRef.current.play().catch(e=>{});
+                } else if (type === 'POWERUP') {
+                    sfxPowerUpRef.current.currentTime = 0;
+                    sfxPowerUpRef.current.play().catch(e=>{});
+                } else if (type === 'POWER_DESTROY') {
+                    sfxPowerDestroyRef.current.currentTime = 0;
+                    sfxPowerDestroyRef.current.play().catch(e=>{});
                 }
             }, []);
 
@@ -655,6 +751,7 @@
                                 onScoreUpdate={setScore}
                                 onGameOver={handleGameOver}
                                 playSfx={playSfx}
+                                playerSrc={GAME_ASSETS['PLAYER_' + selectedChar]}
                             />
                         </div>
 
@@ -769,34 +866,75 @@
                                     </div>
                                 )}
 
-                                {/* START SCREEN */}
+                                {/* START SCREEN (NUEVA VERSIÓN) */}
                                 {status === 'START' && (
                                     <div 
-                                        className="w-full max-w-xs animate-in zoom-in duration-300"
+                                        className="w-full max-w-sm animate-in zoom-in duration-300"
                                         onClick={(e) => e.stopPropagation()}
                                     >
                                         <div className="bg-[#facc15] p-1 pixel-clip shadow-[8px_8px_0px_0px_rgba(0,0,0,0.5)]">
                                             <div className="bg-[#b91c1c] p-1 pixel-clip">
-                                                <div className="bg-[#0f172a] p-6 text-center flex flex-col items-center pixel-clip">
+                                                <div className="bg-[#0f172a] p-4 text-center flex flex-col items-center pixel-clip">
+                                                    
+                                                    {/* LOGO */}
                                                     <img 
                                                         src={GAME_ASSETS.LOGO} 
                                                         alt="Marinero" 
-                                                        className="w-48 object-contain mb-6 animate-pulse"
+                                                        className="w-40 object-contain mb-4 animate-pulse"
                                                     />
                                                     
-                                                    <div className="w-full bg-blue-900/50 p-4 mb-6 border-2 border-dashed border-blue-500/30 text-xs text-blue-100 leading-relaxed">
-                                                        <p className="mb-2">🌊 ¡El mar está lleno de basura!</p>
-                                                        <p>Ayuda al pez Marinero a recolectar botellas y evitar medusas y tiburones.</p>
+                                                    {/* DESCRIPTION */}
+                                                    <h3 className="text-[#facc15] font-bold text-sm mb-4 leading-tight text-shadow-retro px-4">
+                                                        ¡AYUDA A MATEO Y SUS AMIGOS A LIMPIAR EL MAR!
+                                                    </h3>
+                                                    
+                                                    {/* CHAR SELECTOR TEXT */}
+                                                    <p className="text-white text-xs mb-3 text-shadow-retro">
+                                                        Escoge a tu personaje favorito:
+                                                    </p>
+                                                    
+                                                    {/* CHARACTER GRID */}
+                                                    <div className="grid grid-cols-4 gap-2 mb-2 w-full">
+                                                        {/* MATEO */}
+                                                        <div 
+                                                            onClick={() => setSelectedChar('MATEO')}
+                                                            className={`aspect-square bg-[#1e293b] pixel-clip flex items-center justify-center cursor-pointer transition-all border-2 ${selectedChar === 'MATEO' ? 'border-[#facc15] bg-[#334155]' : 'border-transparent hover:bg-[#334155]'}`}
+                                                        >
+                                                            <img src={GAME_ASSETS.PLAYER_MATEO} className="w-10 h-10 object-contain" />
+                                                        </div>
+                                                        
+                                                        {/* ANA */}
+                                                        <div 
+                                                            onClick={() => setSelectedChar('ANA')}
+                                                            className={`aspect-square bg-[#1e293b] pixel-clip flex items-center justify-center cursor-pointer transition-all border-2 ${selectedChar === 'ANA' ? 'border-[#facc15] bg-[#334155]' : 'border-transparent hover:bg-[#334155]'}`}
+                                                        >
+                                                            <img src={GAME_ASSETS.PLAYER_ANA} className="w-10 h-10 object-contain" />
+                                                        </div>
+                                                        
+                                                        {/* CARLITOS (LOCKED) */}
+                                                        <div className="aspect-square bg-[#0f172a] border-2 border-[#1e293b] pixel-clip flex items-center justify-center opacity-50">
+                                                            <Lock className="w-4 h-4 text-slate-600" />
+                                                        </div>
+                                                        
+                                                        {/* MARCOS (LOCKED) */}
+                                                        <div className="aspect-square bg-[#0f172a] border-2 border-[#1e293b] pixel-clip flex items-center justify-center opacity-50">
+                                                            <Lock className="w-4 h-4 text-slate-600" />
+                                                        </div>
                                                     </div>
 
+                                                    {/* NEW: SELECTED CHARACTER NAME */}
+                                                    <div className="text-[#facc15] font-bold text-lg mb-4 text-shadow-retro uppercase tracking-widest">
+                                                        {selectedChar}
+                                                    </div>
+
+                                                    {/* START BUTTON (MINIMALIST) */}
                                                     <button 
                                                         onClick={handleStart}
-                                                        className="btn-pixel-wrapper w-full group active:translate-y-1 transition-transform"
+                                                        className="btn-pixel-wrapper w-16 h-16 group active:translate-y-1 transition-transform"
                                                     >
                                                         <div className="bg-[#b91c1c] p-1 pixel-clip shadow-[4px_4px_0px_0px_#a16207]">
-                                                            <div className="pixel-inner bg-[#facc15] py-4 text-[#b91c1c] font-bold text-lg pixel-clip flex items-center justify-center gap-2 group-hover:bg-yellow-300">
-                                                                <Play className="fill-current w-5 h-5" />
-                                                                ¡AL AGUA!
+                                                            <div className="pixel-inner bg-[#facc15] w-full h-full text-[#b91c1c] pixel-clip flex items-center justify-center group-hover:bg-yellow-300">
+                                                                <Play className="fill-current w-8 h-8" />
                                                             </div>
                                                         </div>
                                                     </button>
