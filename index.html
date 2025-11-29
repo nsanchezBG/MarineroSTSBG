@@ -16,6 +16,11 @@
             fontFamily: {
               pixel: ['"Jersey 10"', 'sans-serif'],
             },
+            colors: {
+                brandRed: '#d2362a', // NUEVO ROJO
+                brandYellow: '#facc15', // AMARILLO (Mantenido para contraste)
+                brandBlue: '#0369a1',
+            }
           },
         },
       }
@@ -182,9 +187,10 @@
         const SWIM_FORCE = -7; 
         const FRICTION = 0.96;
         
+        // Colors updated per user request
         const COLORS = {
-            BRAND_RED: '#dc2626',
-            BRAND_YELLOW: '#facc15',
+            BRAND_RED: '#d2362a', // UPDATED
+            BRAND_YELLOW: '#facc15', // KEEPING CONTRAST
             BRAND_BLUE_LIGHT: '#38bdf8',
             BRAND_BLUE_DARK: '#0369a1',
             SAND: '#fcd34d',
@@ -204,37 +210,22 @@
             const [images, setImages] = useState({});
             const nextDecoSpawnRef = useRef(30);
             
-            // KEYBOARD INPUT STATE (Persistent)
             const keysRef = useRef(new Set());
 
-            // --- 2a. Load Assets ---
             useEffect(() => {
                 const loaded = {};
-                // We filter out any keys starting with PLAYER so we don't load them here unnecessarily
-                // The actual player image is handled via DOM overlay with the 'playerSrc' prop
                 const keys = Object.keys(GAME_ASSETS).filter(k => !k.startsWith('PLAYER_') && !k.startsWith('MUSIC') && !k.startsWith('SFX'));
                 let count = 0;
-                
                 if (keys.length === 0) return;
-
                 keys.forEach(key => {
                     const img = new Image();
                     img.crossOrigin = "Anonymous";
                     img.src = GAME_ASSETS[key];
-                    img.onload = () => { 
-                        loaded[key] = img; 
-                        count++; 
-                        if(count === keys.length) setImages(loaded); 
-                    };
-                    img.onerror = () => { 
-                        console.warn('Error loading asset:', key); 
-                        count++; 
-                        if(count === keys.length) setImages(loaded); 
-                    };
+                    img.onload = () => { loaded[key] = img; count++; if(count === keys.length) setImages(loaded); };
+                    img.onerror = () => { count++; if(count === keys.length) setImages(loaded); };
                 });
             }, []);
 
-            // --- 2b. Game State ---
             const gameState = useRef({
                 player: { x: 50, y: LOGICAL_HEIGHT/2, vx: 0, vy: 0, width: 80, height: 80, invincible: 0, bubbleTimer: 0 },
                 entities: [],
@@ -243,19 +234,15 @@
                 score: 0
             });
 
-            // --- 2c. Input Listeners ---
             useEffect(() => {
                 const down = (e) => keysRef.current.add(e.key);
                 const up = (e) => keysRef.current.delete(e.key);
-                // Custom events for touch controls
                 const touchDown = (e) => keysRef.current.add(e.detail.key);
                 const touchUp = (e) => keysRef.current.delete(e.detail.key);
-
                 window.addEventListener('keydown', down);
                 window.addEventListener('keyup', up);
                 window.addEventListener('game-input-down', touchDown);
                 window.addEventListener('game-input-up', touchUp);
-
                 return () => {
                     window.removeEventListener('keydown', down);
                     window.removeEventListener('keyup', up);
@@ -264,7 +251,6 @@
                 };
             }, []);
             
-            // --- 2d. Reset Logic ---
             useEffect(() => {
                  gameState.current = {
                     player: { x: 50, y: LOGICAL_HEIGHT/2, vx: 0, vy: 0, width: 80, height: 80, invincible: 0, bubbleTimer: 0 },
@@ -278,7 +264,6 @@
                 onScoreUpdate(0);
             }, [sessionId, onScoreUpdate]);
 
-            // --- 2e. Game Loop ---
             const loop = useCallback(() => {
                 if (status !== 'PLAYING') return;
                 
@@ -288,7 +273,6 @@
                 frameCountRef.current++;
                 const fc = frameCountRef.current;
 
-                // --- SPAWNERS --- (Logic remains same, abbreviated for focus on input)
                 if (fc % 100 === 0) { 
                     const types = ['TRASH_BOTTLE', 'TRASH_TIRE', 'TRASH_BAG', 'TRASH_BOOT'];
                     const type = types[Math.floor(Math.random()*types.length)];
@@ -306,36 +290,25 @@
                 if (fc >= nextDecoSpawnRef.current) { 
                     const allDecos = ['DECO_ALGA_1', 'DECO_ALGA_2', 'DECO_ALGA_3', 'DECO_CORAL_1', 'DECO_CORAL_2', 'DECO_CORAL_3', 'DECO_CORAL_4', 'DECO_CORAL_5', 'DECO_ROCK_1'];
                     const assetKey = allDecos[Math.floor(Math.random()*allDecos.length)];
-                    let w = 50, h = 50; // Simple fallback dims
+                    let w = 50, h = 50; 
                     if (assetKey.includes('ALGA')) { w = 40; h = 70; } else if (assetKey.includes('ROCK')) { w = 70; h = 45; } else { w = 60; h = 60; }
                     state.decorations.push({ id: Math.random(), x: LOGICAL_WIDTH + 50, y: LOGICAL_HEIGHT - h - 30 + (Math.random()*10), w: w, h: h, vx: -1.5, asset: assetKey });
                     nextDecoSpawnRef.current = fc + Math.floor(Math.random() * 80) + 40;
                 }
                 if (fc % 15 === 0) state.particles.push({ x: Math.random() * LOGICAL_WIDTH, y: LOGICAL_HEIGHT + 10, vx: 0, vy: -1 - Math.random()*2, life: 200, color: COLORS.BUBBLE, w: 2 + Math.random()*3, h: 2 + Math.random()*3 });
 
-                // --- PHYSICS INPUT LOGIC ---
                 let swim = false;
                 let dx = 0;
 
-                // 1. Check Keyboard/Arrow Keys (Standard)
                 if (keys.has('ArrowUp') || keys.has(' ') || keys.has('w')) swim = true;
                 if (keys.has('ArrowLeft') || keys.has('a')) dx = -1;
                 if (keys.has('ArrowRight') || keys.has('d')) dx = 1;
 
-                // 2. Check Joystick (Override/Combine)
                 if (joystickRef && joystickRef.current && joystickRef.current.active) {
                     const j = joystickRef.current;
-                    // Joystick X controls Horizontal
-                    if (Math.abs(j.x) > 0.2) {
-                        dx = j.x; // Analog control (-1 to 1)
-                    }
-                    // Joystick Y controls Swim or Dive
-                    if (j.y < -0.3) { // Pushing UP significantly
-                        swim = true;
-                    }
-                    if (j.y > 0.3) { // Pushing DOWN -> Dive faster
-                        player.vy += 0.5; // Extra gravity
-                    }
+                    if (Math.abs(j.x) > 0.2) dx = j.x; 
+                    if (j.y < -0.3) swim = true;
+                    if (j.y > 0.3) player.vy += 0.5;
                 }
 
                 if (swim) {
@@ -344,7 +317,7 @@
                 }
 
                 if (Math.abs(dx) > 0.01) {
-                    player.vx += dx * 0.2; // Soft acceleration
+                    player.vx += dx * 0.2; 
                     facingRef.current = dx > 0 ? 'RIGHT' : 'LEFT';
                 }
 
@@ -355,7 +328,6 @@
                 player.x += player.vx;
                 player.y += player.vy;
                 
-                // Boundaries
                 if (player.y < 0) { player.y = 0; player.vy = 0; }
                 if (player.y > LOGICAL_HEIGHT - player.height - 40) { player.y = LOGICAL_HEIGHT - player.height - 40; player.vy = 0; }
                 if (player.x < 0) { player.x = 0; player.vx = 0; }
@@ -364,10 +336,8 @@
                 if (player.invincible > 0) player.invincible--;
                 if (player.bubbleTimer > 0) player.bubbleTimer--;
 
-                // --- ENTITY LOGIC (Collision & Movement) ---
                 state.entities.forEach(e => {
                     e.x += e.vx; e.y += e.vy;
-                    // (Enemy/Particle logic omitted for brevity but preserved in full implementation below)
                     if (e.asset === 'ENEMY_SHARK' && fc % 4 === 0) state.particles.push({x: e.x + e.w - 10, y: e.y + e.h / 2, vx: 2, vy: (Math.random() - 0.5) * 2, life: 25, color: 'rgba(255,255,255,0.4)', w: 5, h: 5});
                     else if (e.asset === 'ENEMY_JELLYFISH' && fc % 15 === 0) state.particles.push({x: e.x + e.w / 2, y: e.y + e.h - 10, vx: 0, vy: 1, life: 40, color: 'rgba(255,255,255,0.3)', w: 3, h: 3});
                     else if (e.type === 'POWER_UP' && fc % 10 === 0) state.particles.push({x: e.x + Math.random()*e.w, y: e.y + Math.random()*e.h, vx: 0, vy: -1, life: 20, color: '#fbbf24', w: 4, h: 4});
@@ -396,9 +366,8 @@
                 state.decorations = state.decorations.filter(d => !d.delete);
                 state.particles = state.particles.filter(p => p.life > 0);
 
-            }, [status, onScoreUpdate, onGameOver, playSfx]); // Dependencies
+            }, [status, onScoreUpdate, onGameOver, playSfx]);
 
-            // --- 2f. Draw Loop (Same as before) ---
             const draw = useCallback(() => {
                 const canvas = canvasRef.current;
                 if (!canvas) return;
@@ -408,14 +377,12 @@
                 ctx.clearRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
                 ctx.imageSmoothingEnabled = false;
                 
-                // Gradient Background
                 const grad = ctx.createLinearGradient(0, 0, 0, LOGICAL_HEIGHT);
                 grad.addColorStop(0, COLORS.BRAND_BLUE_LIGHT);
                 grad.addColorStop(1, COLORS.BRAND_BLUE_DARK);
                 ctx.fillStyle = grad;
                 ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
 
-                // Parallax BG
                 if (images['BG_LAYER']) {
                     const scrollSpeed = 0.5;
                     const bgX = -(frameCountRef.current * scrollSpeed) % LOGICAL_WIDTH;
@@ -423,14 +390,11 @@
                     ctx.drawImage(images['BG_LAYER'], Math.floor(bgX) + LOGICAL_WIDTH - 2, 0, LOGICAL_WIDTH + 2, LOGICAL_HEIGHT);
                 }
 
-                // Floor
                 ctx.fillStyle = COLORS.SAND;
                 ctx.fillRect(0, LOGICAL_HEIGHT - 40, LOGICAL_WIDTH, 40);
 
-                // Decorations
                 state.decorations.forEach(d => { if (images[d.asset]) ctx.drawImage(images[d.asset], d.x, d.y, d.w, d.h); });
                 
-                // Entities
                 state.entities.forEach(e => {
                     if (images[e.asset]) {
                         let yOffset = 0;
@@ -439,10 +403,8 @@
                     } else { ctx.fillStyle = 'red'; ctx.fillRect(e.x, e.y, e.w, e.h); }
                 });
 
-                // Particles
                 state.particles.forEach(p => { ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.w, p.h); });
 
-                // BUBBLE DRAWING
                 const p = state.player;
                 if (p.bubbleTimer > 0 && images['POWER_BUBBLE']) {
                     const pulse = Math.sin(frameCountRef.current / 10) * 5;
@@ -451,7 +413,6 @@
                     ctx.globalAlpha = 1.0;
                 }
 
-                // Player DOM Overlay Sync
                 if (domPlayerRef.current) {
                     const domEl = domPlayerRef.current;
                     if (status === 'PLAYING' || status === 'PAUSED') {
@@ -482,10 +443,6 @@
             );
         };
 
-        // ==========================================
-        // 3. COMPONENT: APP (UI & CONTROLS)
-        // ==========================================
-
         const App = () => {
             const [status, setStatus] = useState('START');
             const [score, setScore] = useState(0);
@@ -493,19 +450,16 @@
             const [gameOverMsg, setGameOverMsg] = useState(null);
             const [sessionId, setSessionId] = useState(0); 
             const [selectedChar, setSelectedChar] = useState('MATEO');
-            const [controlType, setControlType] = useState('ARROWS'); // 'ARROWS' or 'JOYSTICK'
+            const [controlType, setControlType] = useState('ARROWS');
             
-            // Joystick Ref to pass down to game loop
             const joystickRef = useRef({ x: 0, y: 0, active: false });
             
-            // Audio Refs
             const musicRef = useRef(new Audio(GAME_ASSETS.MUSIC_BG));
             const sfxCollectRef = useRef(new Audio(GAME_ASSETS.SFX_COLLECT));
             const sfxExplosionRef = useRef(new Audio(GAME_ASSETS.SFX_EXPLOSION));
             const sfxPowerUpRef = useRef(new Audio(GAME_ASSETS.SFX_POWERUP));
             const sfxPowerDestroyRef = useRef(new Audio(GAME_ASSETS.SFX_POWER_DESTROY));
 
-            // Init Audio
             useEffect(() => {
                 musicRef.current.loop = true;
                 musicRef.current.volume = 0.4;
@@ -534,7 +488,6 @@
                 else if (type === 'POWER_DESTROY') { sfxPowerDestroyRef.current.currentTime = 0; sfxPowerDestroyRef.current.play().catch(e=>{}); }
             }, []);
 
-            // Input Event Emitter for Controls
             const emitInput = (key, type) => {
                 const event = new CustomEvent(type === 'down' ? 'game-input-down' : 'game-input-up', { detail: { key } });
                 window.dispatchEvent(event);
@@ -545,11 +498,9 @@
             const togglePause = () => { if (status === 'PLAYING') setStatus('PAUSED'); else if (status === 'PAUSED') setStatus('PLAYING'); };
             const resetGame = () => { setSessionId(prev => prev + 1); setScore(0); setStatus('PLAYING'); };
 
-            // Joystick Logic UI
             const joystickBaseRef = useRef(null);
             const joystickStickRef = useRef(null);
 
-            // Unified handler helper
             const getEventPos = (e) => {
                 if (e.touches && e.touches.length > 0) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
                 return { x: e.clientX, y: e.clientY };
@@ -557,26 +508,22 @@
 
             const handleJoystickStart = (e) => {
                 if(e.cancelable && e.type === 'touchstart') e.preventDefault();
-                e.stopPropagation(); // CRITICAL: Prevents pause click
-                
+                e.stopPropagation(); 
                 joystickRef.current.active = true;
                 handleJoystickMove(e);
             };
 
             const handleJoystickMove = (e) => {
-                e.stopPropagation(); // CRITICAL: Prevents drag bubbling
+                e.stopPropagation(); 
                 if(e.cancelable && e.type === 'touchmove') e.preventDefault();
-
                 if (!joystickRef.current.active || !joystickBaseRef.current || !joystickStickRef.current) return;
                 
                 const pos = getEventPos(e);
                 const baseRect = joystickBaseRef.current.getBoundingClientRect();
                 const centerX = baseRect.left + baseRect.width / 2;
                 const centerY = baseRect.top + baseRect.height / 2;
-                
                 const deltaX = pos.x - centerX;
                 const deltaY = pos.y - centerY;
-                
                 const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
                 const maxDist = baseRect.width / 2;
                 
@@ -589,10 +536,7 @@
                     clampedY = Math.sin(angle) * maxDist;
                 }
                 
-                // Update Visual Stick
                 joystickStickRef.current.style.transform = `translate(${clampedX}px, ${clampedY}px)`;
-                
-                // Update Logic Data (-1 to 1)
                 joystickRef.current.x = clampedX / maxDist;
                 joystickRef.current.y = clampedY / maxDist;
             };
@@ -600,7 +544,6 @@
             const handleJoystickEnd = (e) => {
                 e.stopPropagation();
                 if(e.cancelable && e.type === 'touchend') e.preventDefault();
-                
                 joystickRef.current.active = false;
                 joystickRef.current.x = 0;
                 joystickRef.current.y = 0;
@@ -619,13 +562,13 @@
 
                         {/* HUD (Top) */}
                         <div className="absolute top-8 left-0 right-0 z-20 px-4 pointer-events-none">
-                            <div className="relative bg-[#facc15] p-1 pixel-clip shadow-[4px_4px_0px_0px_rgba(0,0,0,0.5)] pointer-events-auto">
-                                <div className="bg-[#b91c1c] h-12 flex items-center justify-between px-4 text-white w-full pixel-clip">
-                                    <div className="flex items-center gap-2"><Trash2 className="w-4 h-4 text-[#facc15]" /><span className="text-sm font-bold tracking-widest text-shadow-retro">{score.toString().padStart(5,'0')}</span></div>
-                                    <div className="flex items-center gap-2"><Award className="w-4 h-4 text-[#facc15]" /><span className="text-sm font-bold tracking-widest text-shadow-retro">{highScore.toString().padStart(5,'0')}</span></div>
+                            <div className="relative bg-brandYellow p-1 pixel-clip shadow-[4px_4px_0px_0px_rgba(0,0,0,0.5)] pointer-events-auto">
+                                <div className="bg-brandRed h-16 flex items-center justify-between px-4 text-white w-full pixel-clip">
+                                    <div className="flex items-center gap-2"><Trash2 className="w-6 h-6 text-brandYellow" /><span className="text-3xl font-bold tracking-widest text-shadow-retro">{score.toString().padStart(5,'0')}</span></div>
+                                    <div className="flex items-center gap-2"><Award className="w-6 h-6 text-brandYellow" /><span className="text-3xl font-bold tracking-widest text-shadow-retro">{highScore.toString().padStart(5,'0')}</span></div>
                                 </div>
                             </div>
-                            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-20 w-32 flex items-center justify-center pointer-events-none"><img src={GAME_ASSETS.LOGO} alt="Marinero Logo" className="h-16 object-contain drop-shadow-xl z-10 animate-logo-pulse" /></div>
+                            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-32 w-48 flex items-center justify-center pointer-events-none"><img src={GAME_ASSETS.LOGO} alt="Marinero Logo" className="h-28 object-contain drop-shadow-xl z-10 animate-logo-pulse" /></div>
                         </div>
 
                         {/* CONTROLS (Bottom) */}
@@ -634,33 +577,29 @@
                                 {controlType === 'ARROWS' ? (
                                     <>
                                         <div className="flex gap-4 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
-                                            {/* LEFT */}
                                             <div className="btn-pixel-wrapper w-16 h-16 md:w-20 md:h-20 active:translate-y-1 transition-transform touch-manipulation">
                                                 <div className="w-full h-full bg-[#ca8a04] p-1 pixel-clip shadow-[4px_4px_0px_0px_rgba(0,0,0,0.5)]" onTouchStart={(e) => { e.preventDefault(); emitInput('ArrowLeft', 'down'); }} onTouchEnd={(e) => { e.preventDefault(); emitInput('ArrowLeft', 'up'); }} onMouseDown={() => emitInput('ArrowLeft', 'down')} onMouseUp={() => emitInput('ArrowLeft', 'up')} onMouseLeave={() => emitInput('ArrowLeft', 'up')}>
-                                                    <div className="pixel-inner w-full h-full bg-[#facc15] pixel-clip flex items-center justify-center transition-transform"><ChevronLeft className="w-10 h-10 text-[#b91c1c]" strokeWidth={4} /></div>
+                                                    <div className="pixel-inner w-full h-full bg-brandYellow pixel-clip flex items-center justify-center transition-transform"><ChevronLeft className="w-10 h-10 text-brandRed" strokeWidth={4} /></div>
                                                 </div>
                                             </div>
-                                            {/* RIGHT */}
                                             <div className="btn-pixel-wrapper w-16 h-16 md:w-20 md:h-20 active:translate-y-1 transition-transform touch-manipulation">
                                                 <div className="w-full h-full bg-[#ca8a04] p-1 pixel-clip shadow-[4px_4px_0px_0px_rgba(0,0,0,0.5)]" onTouchStart={(e) => { e.preventDefault(); emitInput('ArrowRight', 'down'); }} onTouchEnd={(e) => { e.preventDefault(); emitInput('ArrowRight', 'up'); }} onMouseDown={() => emitInput('ArrowRight', 'down')} onMouseUp={() => emitInput('ArrowRight', 'up')} onMouseLeave={() => emitInput('ArrowRight', 'up')}>
-                                                    <div className="pixel-inner w-full h-full bg-[#facc15] pixel-clip flex items-center justify-center transition-transform"><ChevronRight className="w-10 h-10 text-[#b91c1c]" strokeWidth={4} /></div>
+                                                    <div className="pixel-inner w-full h-full bg-brandYellow pixel-clip flex items-center justify-center transition-transform"><ChevronRight className="w-10 h-10 text-brandRed" strokeWidth={4} /></div>
                                                 </div>
                                             </div>
                                         </div>
-                                        {/* SWIM BUTTON */}
                                         <div className="pointer-events-auto" onClick={(e) => e.stopPropagation()}>
                                             <div className="btn-pixel-wrapper w-20 h-20 md:w-24 md:h-24 active:translate-y-1 transition-transform touch-manipulation">
                                                 <div className="w-full h-full bg-[#7f1d1d] p-1 pixel-clip shadow-[4px_4px_0px_0px_rgba(0,0,0,0.5)]" onTouchStart={(e) => { e.preventDefault(); emitInput(' ', 'down'); }} onTouchEnd={(e) => { e.preventDefault(); emitInput(' ', 'up'); }} onMouseDown={() => emitInput(' ', 'down')} onMouseUp={() => emitInput(' ', 'up')} onMouseLeave={() => emitInput(' ', 'up')}>
-                                                    <div className="pixel-inner w-full h-full bg-[#b91c1c] pixel-clip flex flex-col items-center justify-center transition-transform"><ArrowUp className="w-10 h-10 text-white mb-1" strokeWidth={4} /><span className="text-[10px] font-bold text-[#facc15] text-shadow-retro">NADAR</span></div>
+                                                    <div className="pixel-inner w-full h-full bg-brandRed pixel-clip flex flex-col items-center justify-center transition-transform"><ArrowUp className="w-10 h-10 text-white mb-1" strokeWidth={4} /><span className="text-[10px] font-bold text-brandYellow text-shadow-retro">NADAR</span></div>
                                                 </div>
                                             </div>
                                         </div>
                                     </>
                                 ) : (
-                                    /* JOYSTICK CONTROL (UPDATED EVENTS) */
                                     <div className="w-full flex justify-center pb-4 pointer-events-auto" onClick={e => e.stopPropagation()}>
                                         <div ref={joystickBaseRef} 
-                                             className="w-32 h-32 rounded-full bg-[#ca8a04]/80 border-4 border-[#facc15] relative shadow-[4px_4px_0px_0px_rgba(0,0,0,0.5)] touch-none"
+                                             className="w-32 h-32 rounded-full bg-[#ca8a04]/80 border-4 border-brandYellow relative shadow-[4px_4px_0px_0px_rgba(0,0,0,0.5)] touch-none"
                                              onMouseDown={handleJoystickStart}
                                              onTouchStart={handleJoystickStart}
                                              onMouseMove={handleJoystickMove}
@@ -669,8 +608,7 @@
                                              onMouseLeave={handleJoystickEnd}
                                              onTouchEnd={handleJoystickEnd}
                                         >
-                                            {/* Stick */}
-                                            <div ref={joystickStickRef} className="w-12 h-12 bg-[#b91c1c] rounded-full absolute top-1/2 left-1/2 -ml-6 -mt-6 border-2 border-[#fecaca] shadow-lg pointer-events-none" />
+                                            <div ref={joystickStickRef} className="w-12 h-12 bg-brandRed rounded-full absolute top-1/2 left-1/2 -ml-6 -mt-6 border-2 border-[#fecaca] shadow-lg pointer-events-none" />
                                         </div>
                                     </div>
                                 )}
@@ -682,45 +620,43 @@
                             <div className="absolute inset-0 z-40 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm" onClick={(e) => { if (status === 'PAUSED') togglePause(); }}>
                                 {status === 'PAUSED' && (
                                     <div className="flex flex-col items-center animate-in fade-in zoom-in duration-200 pointer-events-none">
-                                        <h2 className="text-6xl text-[#facc15] font-bold text-shadow-retro mb-4 animate-pulse">PAUSA</h2>
+                                        <h2 className="text-6xl text-brandYellow font-bold text-shadow-retro mb-4 animate-pulse">PAUSA</h2>
                                         <p className="text-white text-xl text-shadow-retro animate-bounce">TOCA PARA CONTINUAR</p>
                                     </div>
                                 )}
 
                                 {status === 'START' && (
                                     <div className="w-full max-w-sm animate-in zoom-in duration-300" onClick={(e) => e.stopPropagation()}>
-                                        <div className="bg-[#facc15] p-1 pixel-clip shadow-[8px_8px_0px_0px_rgba(0,0,0,0.5)]">
-                                            <div className="bg-[#b91c1c] p-1 pixel-clip">
+                                        <div className="bg-brandYellow p-1 pixel-clip shadow-[8px_8px_0px_0px_rgba(0,0,0,0.5)]">
+                                            <div className="bg-brandRed p-1 pixel-clip">
                                                 <div className="bg-[#0f172a] p-4 text-center flex flex-col items-center pixel-clip">
                                                     <img src={GAME_ASSETS.LOGO} alt="Marinero" className="w-40 object-contain mb-4 animate-pulse" />
-                                                    <h3 className="text-[#facc15] font-bold text-sm mb-4 leading-tight text-shadow-retro px-4">¡AYUDA A MATEO Y SUS AMIGOS A LIMPIAR EL MAR!</h3>
+                                                    <h3 className="text-brandYellow font-bold text-2xl mb-4 leading-tight text-shadow-retro px-4">¡AYUDA A MATEO Y SUS AMIGOS A LIMPIAR EL MAR!</h3>
                                                     
-                                                    {/* CHAR SELECTOR */}
-                                                    <p className="text-white text-xs mb-3 text-shadow-retro">Escoge a tu personaje favorito:</p>
+                                                    <p className="text-white text-lg mb-3 text-shadow-retro">Escoge a tu personaje favorito:</p>
                                                     <div className="grid grid-cols-4 gap-2 mb-2 w-full">
-                                                        <div onClick={() => setSelectedChar('MATEO')} className={`aspect-square bg-[#1e293b] pixel-clip flex items-center justify-center cursor-pointer transition-all border-2 ${selectedChar === 'MATEO' ? 'border-[#facc15] bg-[#334155]' : 'border-transparent hover:bg-[#334155]'}`}><img src={GAME_ASSETS.PLAYER_MATEO} className="w-10 h-10 object-contain" /></div>
-                                                        <div onClick={() => setSelectedChar('ANA')} className={`aspect-square bg-[#1e293b] pixel-clip flex items-center justify-center cursor-pointer transition-all border-2 ${selectedChar === 'ANA' ? 'border-[#facc15] bg-[#334155]' : 'border-transparent hover:bg-[#334155]'}`}><img src={GAME_ASSETS.PLAYER_ANA} className="w-10 h-10 object-contain" /></div>
+                                                        <div onClick={() => setSelectedChar('MATEO')} className={`aspect-square bg-[#1e293b] pixel-clip flex items-center justify-center cursor-pointer transition-all border-2 ${selectedChar === 'MATEO' ? 'border-brandYellow bg-[#334155]' : 'border-transparent hover:bg-[#334155]'}`}><img src={GAME_ASSETS.PLAYER_MATEO} className="w-10 h-10 object-contain" /></div>
+                                                        <div onClick={() => setSelectedChar('ANA')} className={`aspect-square bg-[#1e293b] pixel-clip flex items-center justify-center cursor-pointer transition-all border-2 ${selectedChar === 'ANA' ? 'border-brandYellow bg-[#334155]' : 'border-transparent hover:bg-[#334155]'}`}><img src={GAME_ASSETS.PLAYER_ANA} className="w-10 h-10 object-contain" /></div>
                                                         <div className="aspect-square bg-[#0f172a] border-2 border-[#1e293b] pixel-clip flex items-center justify-center opacity-50"><Lock className="w-4 h-4 text-slate-600" /></div>
                                                         <div className="aspect-square bg-[#0f172a] border-2 border-[#1e293b] pixel-clip flex items-center justify-center opacity-50"><Lock className="w-4 h-4 text-slate-600" /></div>
                                                     </div>
-                                                    <div className="text-[#facc15] font-bold text-lg mb-4 text-shadow-retro uppercase tracking-widest">{selectedChar}</div>
+                                                    <div className="text-brandYellow font-bold text-2xl mb-4 text-shadow-retro uppercase tracking-widest">{selectedChar}</div>
 
-                                                    {/* CONTROL SELECTOR */}
-                                                    <p className="text-white text-xs mb-2 text-shadow-retro">Tipo de Control:</p>
+                                                    <p className="text-white text-base mb-2 text-shadow-retro">Tipo de Control:</p>
                                                     <div className="flex gap-4 mb-6">
-                                                        <button onClick={() => setControlType('ARROWS')} className={`px-4 py-2 pixel-clip border-2 ${controlType === 'ARROWS' ? 'bg-[#facc15] text-[#b91c1c] border-white' : 'bg-[#1e293b] text-slate-400 border-transparent'} flex items-center gap-2 transition-all`}>
+                                                        <button onClick={() => setControlType('ARROWS')} className={`px-4 py-2 pixel-clip border-2 ${controlType === 'ARROWS' ? 'bg-brandYellow text-brandRed border-white' : 'bg-[#1e293b] text-slate-400 border-transparent'} flex items-center gap-2 transition-all`}>
                                                             <Move className="w-4 h-4" /> 
-                                                            <span className="text-xs font-bold">FLECHAS</span>
+                                                            <span className="text-sm font-bold">FLECHAS</span>
                                                         </button>
-                                                        <button onClick={() => setControlType('JOYSTICK')} className={`px-4 py-2 pixel-clip border-2 ${controlType === 'JOYSTICK' ? 'bg-[#facc15] text-[#b91c1c] border-white' : 'bg-[#1e293b] text-slate-400 border-transparent'} flex items-center gap-2 transition-all`}>
+                                                        <button onClick={() => setControlType('JOYSTICK')} className={`px-4 py-2 pixel-clip border-2 ${controlType === 'JOYSTICK' ? 'bg-brandYellow text-brandRed border-white' : 'bg-[#1e293b] text-slate-400 border-transparent'} flex items-center gap-2 transition-all`}>
                                                             <Gamepad2 className="w-4 h-4" />
-                                                            <span className="text-xs font-bold">JOYSTICK</span>
+                                                            <span className="text-sm font-bold">JOYSTICK</span>
                                                         </button>
                                                     </div>
 
                                                     <button onClick={handleStart} className="btn-pixel-wrapper w-16 h-16 group active:translate-y-1 transition-transform">
-                                                        <div className="bg-[#b91c1c] p-1 pixel-clip shadow-[4px_4px_0px_0px_#a16207]">
-                                                            <div className="pixel-inner bg-[#facc15] w-full h-full text-[#b91c1c] pixel-clip flex items-center justify-center group-hover:bg-yellow-300"><Play className="fill-current w-8 h-8" /></div>
+                                                        <div className="bg-brandRed p-1 pixel-clip shadow-[4px_4px_0px_0px_#a16207]">
+                                                            <div className="pixel-inner bg-brandYellow w-full h-full text-brandRed pixel-clip flex items-center justify-center group-hover:bg-yellow-300"><Play className="fill-current w-8 h-8" /></div>
                                                         </div>
                                                     </button>
                                                 </div>
@@ -731,17 +667,17 @@
 
                                 {status === 'GAME_OVER' && (
                                     <div className="w-full max-w-xs animate-in slide-in-from-bottom duration-500" onClick={(e) => e.stopPropagation()}>
-                                        <div className="bg-[#0369a1] p-1 pixel-clip shadow-[8px_8px_0px_0px_rgba(0,0,0,0.5)]">
+                                        <div className="bg-brandBlue p-1 pixel-clip shadow-[8px_8px_0px_0px_rgba(0,0,0,0.5)]">
                                             <div className="bg-white p-1 pixel-clip">
                                                 <div className="bg-[#f0f9ff] p-6 text-center flex flex-col items-center pixel-clip">
                                                     <img src={GAME_ASSETS.LOGO} alt="Marinero" className="h-16 object-contain mb-4 animate-bounce" />
-                                                    <h2 className="text-2xl text-[#0369a1] font-bold mb-4 text-shadow-retro">¡OH NO!</h2>
-                                                    <div className="w-full bg-[#b91c1c] p-1 pixel-clip mb-6 shadow-sm transform -rotate-1">
-                                                        <div className="bg-white p-4 pixel-clip"><div className="text-xs text-slate-500 font-bold uppercase mb-1">Puntuación Final</div><div className="text-4xl font-black text-[#b91c1c] text-shadow-retro">{score}</div></div>
+                                                    <h2 className="text-2xl text-brandBlue font-bold mb-4 text-shadow-retro">¡OH NO!</h2>
+                                                    <div className="w-full bg-brandRed p-1 pixel-clip mb-6 shadow-sm transform -rotate-1">
+                                                        <div className="bg-white p-4 pixel-clip"><div className="text-xs text-slate-500 font-bold uppercase mb-1">Puntuación Final</div><div className="text-4xl font-black text-brandRed text-shadow-retro">{score}</div></div>
                                                     </div>
-                                                    {gameOverMsg && (<div className="mb-6"><div className="text-[#0369a1] font-bold text-sm uppercase border-b-2 border-blue-200 pb-1 mb-2">{gameOverMsg.title}</div><p className="text-xs text-slate-600 italic leading-relaxed">"{gameOverMsg.message}"</p></div>)}
+                                                    {gameOverMsg && (<div className="mb-6"><div className="text-brandBlue font-bold text-sm uppercase border-b-2 border-blue-200 pb-1 mb-2">{gameOverMsg.title}</div><p className="text-xs text-slate-600 italic leading-relaxed">"{gameOverMsg.message}"</p></div>)}
                                                     <button onClick={resetGame} className="btn-pixel-wrapper w-full group active:translate-y-1 transition-transform">
-                                                        <div className="bg-white p-1 pixel-clip shadow-[4px_4px_0px_0px_#7f1d1d]"><div className="pixel-inner bg-[#b91c1c] py-4 text-white font-bold text-lg pixel-clip flex items-center justify-center gap-2 group-hover:bg-red-600"><RotateCcw className="w-5 h-5" />REINTENTAR</div></div>
+                                                        <div className="bg-white p-1 pixel-clip shadow-[4px_4px_0px_0px_#7f1d1d]"><div className="pixel-inner bg-brandRed py-4 text-white font-bold text-lg pixel-clip flex items-center justify-center gap-2 group-hover:bg-red-600"><RotateCcw className="w-5 h-5" />REINTENTAR</div></div>
                                                     </button>
                                                 </div>
                                             </div>
