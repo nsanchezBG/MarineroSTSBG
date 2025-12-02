@@ -18,8 +18,9 @@
             },
             colors: {
                 brandRed: '#d2362a', // NUEVO ROJO
-                brandYellow: '#facc15', // AMARILLO (Mantenido para contraste)
-                brandBlue: '#0369a1',
+                brandYellow: '#facc15', // AMARILLO
+                brandBlue: '#0369a1', // AZUL DE LA MARCA
+                brandBlueLight: '#38bdf8', // AZUL CLARO
             }
           },
         },
@@ -131,6 +132,7 @@
         
         const GAME_ASSETS = {
             LOGO: "https://raw.githubusercontent.com/nsanchezBG/MarineroSTSBG/main/logo1.png",
+            IMAGINED_BY: "https://raw.githubusercontent.com/nsanchezBG/MarineroSTSBG/main/imaginedbyBG.png",
             
             // CHARACTERS
             PLAYER_MATEO: "https://raw.githubusercontent.com/nsanchezBG/MarineroSTSBG/main/MateoPlayer.gif",
@@ -251,6 +253,7 @@
                 };
             }, []);
             
+            // --- Reset Logic ---
             useEffect(() => {
                  gameState.current = {
                     player: { x: 50, y: LOGICAL_HEIGHT/2, vx: 0, vy: 0, width: 80, height: 80, invincible: 0, bubbleTimer: 0 },
@@ -261,16 +264,22 @@
                 };
                 frameCountRef.current = 0;
                 nextDecoSpawnRef.current = 30;
+                keysRef.current.clear();
+                facingRef.current = 'RIGHT'; 
                 onScoreUpdate(0);
             }, [sessionId, onScoreUpdate]);
 
             const loop = useCallback(() => {
-                if (status !== 'PLAYING') return;
+                if (status === 'PAUSED' || status === 'GAME_OVER') return;
                 
                 const state = gameState.current;
                 const { player } = state;
                 const keys = keysRef.current;
                 frameCountRef.current++;
+                
+                // Allow drawing background in SPLASH and START
+                if (status === 'START' || status === 'SPLASH') return;
+
                 const fc = frameCountRef.current;
 
                 if (fc % 100 === 0) { 
@@ -306,9 +315,16 @@
 
                 if (joystickRef && joystickRef.current && joystickRef.current.active) {
                     const j = joystickRef.current;
-                    if (Math.abs(j.x) > 0.2) dx = j.x; 
-                    if (j.y < -0.3) swim = true;
-                    if (j.y > 0.3) player.vy += 0.5;
+                    // Horizontal
+                    if (j.x > 0.2) dx = 0.25; 
+                    else if (j.x < -0.2) dx = -0.25;
+                    
+                    // Vertical
+                    if (j.y < -0.3) { 
+                        player.vy -= 0.45; 
+                        if (fc % 5 === 0) state.particles.push({ x: player.x + (facingRef.current === 'RIGHT' ? 0 : player.width), y: player.y + 40, vx: (Math.random()-0.5)*2, vy: 1, life: 20, color: 'rgba(255,255,255,0.5)', w:6, h:6 });
+                    }
+                    if (j.y > 0.3) player.vy += 0.4;
                 }
 
                 if (swim) {
@@ -393,6 +409,8 @@
                 ctx.fillStyle = COLORS.SAND;
                 ctx.fillRect(0, LOGICAL_HEIGHT - 40, LOGICAL_WIDTH, 40);
 
+                if (status === 'START' || status === 'SPLASH') return;
+
                 state.decorations.forEach(d => { if (images[d.asset]) ctx.drawImage(images[d.asset], d.x, d.y, d.w, d.h); });
                 
                 state.entities.forEach(e => {
@@ -444,7 +462,7 @@
         };
 
         const App = () => {
-            const [status, setStatus] = useState('START');
+            const [status, setStatus] = useState('SPLASH'); // Initial State: SPLASH
             const [score, setScore] = useState(0);
             const [highScore, setHighScore] = useState(0);
             const [gameOverMsg, setGameOverMsg] = useState(null);
@@ -453,6 +471,9 @@
             const [controlType, setControlType] = useState('ARROWS');
             
             const joystickRef = useRef({ x: 0, y: 0, active: false });
+            
+            // Ref to prevent pausing when joystick is released
+            const blockPauseRef = useRef(false);
             
             const musicRef = useRef(new Audio(GAME_ASSETS.MUSIC_BG));
             const sfxCollectRef = useRef(new Audio(GAME_ASSETS.SFX_COLLECT));
@@ -467,18 +488,11 @@
                 sfxExplosionRef.current.volume = 0.7;
                 sfxPowerUpRef.current.volume = 0.7;
                 sfxPowerDestroyRef.current.volume = 0.7;
-
-                const playMusic = async () => { try { await musicRef.current.play(); } catch (err) { console.log("Autoplay blocked"); } };
-                playMusic();
-
-                const unlockAudio = () => { musicRef.current.play().catch(e=>{}); window.removeEventListener('click', unlockAudio); window.removeEventListener('touchstart', unlockAudio); };
-                window.addEventListener('click', unlockAudio); window.addEventListener('touchstart', unlockAudio);
-                return () => { window.removeEventListener('click', unlockAudio); window.removeEventListener('touchstart', unlockAudio); };
             }, []);
 
             useEffect(() => {
                 const music = musicRef.current;
-                if (status === 'PAUSED') music.pause(); else music.play().catch(e => {}); 
+                if (status === 'PAUSED') music.pause(); else if(status !== 'SPLASH') music.play().catch(e => {}); 
             }, [status]);
             
             const playSfx = useCallback((type) => {
@@ -493,37 +507,58 @@
                 window.dispatchEvent(event);
             };
 
-            const handleStart = useCallback(() => { setSessionId(prev => prev + 1); setStatus('PLAYING'); setScore(0); }, []);
-            const handleGameOver = useCallback((finalScore) => { setStatus('GAME_OVER'); setHighScore(h => Math.max(h, finalScore)); setGameOverMsg(CUSTOM_MESSAGES[Math.floor(Math.random() * CUSTOM_MESSAGES.length)]); }, []);
-            const togglePause = () => { if (status === 'PLAYING') setStatus('PAUSED'); else if (status === 'PAUSED') setStatus('PLAYING'); };
-            const resetGame = () => { setSessionId(prev => prev + 1); setScore(0); setStatus('PLAYING'); };
+            const handleStart = useCallback(() => { 
+                setSessionId(prev => prev + 1); 
+                setStatus('PLAYING'); 
+                setScore(0); 
+                // Reset Joystick
+                joystickRef.current = { x: 0, y: 0, active: false };
+                blockPauseRef.current = false;
+                if (joystickStickRef.current) joystickStickRef.current.style.transform = `translate(0px, 0px)`;
+            }, []);
 
+            const handleGameOver = useCallback((finalScore) => { setStatus('GAME_OVER'); setHighScore(h => Math.max(h, finalScore)); setGameOverMsg(CUSTOM_MESSAGES[Math.floor(Math.random() * CUSTOM_MESSAGES.length)]); }, []);
+            
+            const togglePause = () => { 
+                if (blockPauseRef.current) return; 
+                if (status === 'PLAYING') setStatus('PAUSED'); else if (status === 'PAUSED') setStatus('PLAYING'); 
+            };
+            
+            const resetGame = () => { 
+                setSessionId(prev => prev + 1); 
+                setScore(0); 
+                setStatus('PLAYING'); 
+                // Reset Joystick
+                joystickRef.current = { x: 0, y: 0, active: false };
+                blockPauseRef.current = false;
+                if (joystickStickRef.current) joystickStickRef.current.style.transform = `translate(0px, 0px)`;
+            };
+
+            // NEW: Handle Splash Screen Click (Audio Unlock)
+            const handleSplashClick = () => {
+                const music = musicRef.current;
+                music.play().then(() => {
+                    setStatus('START');
+                }).catch(e => {
+                    // Fallback if autoplay still fails (unlikely on click)
+                    setStatus('START');
+                });
+            };
+
+            // --- JOYSTICK LOGIC ---
             const joystickBaseRef = useRef(null);
             const joystickStickRef = useRef(null);
 
-            const getEventPos = (e) => {
-                if (e.touches && e.touches.length > 0) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-                return { x: e.clientX, y: e.clientY };
-            };
-
-            const handleJoystickStart = (e) => {
-                if(e.cancelable && e.type === 'touchstart') e.preventDefault();
-                e.stopPropagation(); 
-                joystickRef.current.active = true;
-                handleJoystickMove(e);
-            };
-
-            const handleJoystickMove = (e) => {
-                e.stopPropagation(); 
-                if(e.cancelable && e.type === 'touchmove') e.preventDefault();
-                if (!joystickRef.current.active || !joystickBaseRef.current || !joystickStickRef.current) return;
+            const updateStick = useCallback((clientX, clientY) => {
+                if (!joystickBaseRef.current || !joystickStickRef.current) return;
                 
-                const pos = getEventPos(e);
                 const baseRect = joystickBaseRef.current.getBoundingClientRect();
                 const centerX = baseRect.left + baseRect.width / 2;
                 const centerY = baseRect.top + baseRect.height / 2;
-                const deltaX = pos.x - centerX;
-                const deltaY = pos.y - centerY;
+                
+                const deltaX = clientX - centerX;
+                const deltaY = clientY - centerY;
+                
                 const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
                 const maxDist = baseRect.width / 2;
                 
@@ -539,16 +574,68 @@
                 joystickStickRef.current.style.transform = `translate(${clampedX}px, ${clampedY}px)`;
                 joystickRef.current.x = clampedX / maxDist;
                 joystickRef.current.y = clampedY / maxDist;
-            };
+            }, []);
 
-            const handleJoystickEnd = (e) => {
-                e.stopPropagation();
-                if(e.cancelable && e.type === 'touchend') e.preventDefault();
+            const onGlobalMove = useCallback((e) => {
+                if (!joystickRef.current.active) return;
+                if(e.cancelable && e.type !== 'mousemove') e.preventDefault(); 
+                
+                let clientX, clientY;
+                if (e.touches && e.touches.length > 0) {
+                    clientX = e.touches[0].clientX;
+                    clientY = e.touches[0].clientY;
+                } else {
+                    clientX = e.clientX;
+                    clientY = e.clientY;
+                }
+                updateStick(clientX, clientY);
+            }, [updateStick]);
+
+            const onGlobalEnd = useCallback((e) => {
+                if (e.type === 'touchend') {
+                    if (e.cancelable) e.preventDefault();
+                }
+
                 joystickRef.current.active = false;
                 joystickRef.current.x = 0;
                 joystickRef.current.y = 0;
                 if (joystickStickRef.current) joystickStickRef.current.style.transform = `translate(0px, 0px)`;
-            };
+                
+                setTimeout(() => {
+                    blockPauseRef.current = false;
+                }, 100);
+
+                window.removeEventListener('mousemove', onGlobalMove);
+                window.removeEventListener('mouseup', onGlobalEnd);
+                window.removeEventListener('touchmove', onGlobalMove);
+                window.removeEventListener('touchend', onGlobalEnd);
+                window.removeEventListener('touchcancel', onGlobalEnd);
+            }, [onGlobalMove]);
+
+            const handleJoystickStart = useCallback((e) => {
+                e.stopPropagation(); 
+                
+                if(e.cancelable && e.type === 'touchstart') e.preventDefault(); 
+                
+                joystickRef.current.active = true;
+                blockPauseRef.current = true; 
+                
+                window.addEventListener('mousemove', onGlobalMove);
+                window.addEventListener('mouseup', onGlobalEnd);
+                window.addEventListener('touchmove', onGlobalMove, { passive: false }); 
+                window.addEventListener('touchend', onGlobalEnd, { passive: false });
+                window.addEventListener('touchcancel', onGlobalEnd, { passive: false });
+                
+                let clientX, clientY;
+                if (e.touches && e.touches.length > 0) {
+                    clientX = e.touches[0].clientX;
+                    clientY = e.touches[0].clientY;
+                } else {
+                    clientX = e.clientX;
+                    clientY = e.clientY;
+                }
+                updateStick(clientX, clientY);
+            }, [onGlobalMove, onGlobalEnd, updateStick]);
 
             return (
                 <div className="w-full h-full bg-slate-900 flex justify-center items-center overflow-hidden font-pixel select-none">
@@ -560,16 +647,18 @@
 
                         <div className="scanline z-10 opacity-30 pointer-events-none"></div>
 
-                        {/* HUD (Top) */}
-                        <div className="absolute top-8 left-0 right-0 z-20 px-4 pointer-events-none">
-                            <div className="relative bg-brandYellow p-1 pixel-clip shadow-[4px_4px_0px_0px_rgba(0,0,0,0.5)] pointer-events-auto">
-                                <div className="bg-brandRed h-16 flex items-center justify-between px-4 text-white w-full pixel-clip">
-                                    <div className="flex items-center gap-2"><Trash2 className="w-5 h-5 text-brandYellow" /><span className="text-2xl font-bold tracking-widest text-shadow-retro">{score.toString().padStart(5,'0')}</span></div>
-                                    <div className="flex items-center gap-2"><Award className="w-5 h-5 text-brandYellow" /><span className="text-2xl font-bold tracking-widest text-shadow-retro">{highScore.toString().padStart(5,'0')}</span></div>
+                        {/* HUD (Top) - HIDDEN ON START/SPLASH */}
+                        {(status !== 'START' && status !== 'SPLASH') && (
+                            <div className="absolute top-8 left-0 right-0 z-20 px-4 pointer-events-none">
+                                <div className="relative bg-brandYellow p-1 pixel-clip shadow-[4px_4px_0px_0px_rgba(0,0,0,0.5)] pointer-events-auto">
+                                    <div className="bg-brandRed h-16 flex items-center justify-between px-4 text-white w-full pixel-clip">
+                                        <div className="flex items-center gap-2"><Trash2 className="w-5 h-5 text-brandYellow" /><span className="text-2xl font-bold tracking-widest text-shadow-retro">{score.toString().padStart(5,'0')}</span></div>
+                                        <div className="flex items-center gap-2"><Award className="w-5 h-5 text-brandYellow" /><span className="text-2xl font-bold tracking-widest text-shadow-retro">{highScore.toString().padStart(5,'0')}</span></div>
+                                    </div>
                                 </div>
+                                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-24 w-40 flex items-center justify-center pointer-events-none"><img src={GAME_ASSETS.LOGO} alt="Marinero Logo" className="h-20 object-contain drop-shadow-xl z-10 animate-logo-pulse" /></div>
                             </div>
-                            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-28 w-44 flex items-center justify-center pointer-events-none"><img src={GAME_ASSETS.LOGO} alt="Marinero Logo" className="h-24 object-contain drop-shadow-xl z-10 animate-logo-pulse" /></div>
-                        </div>
+                        )}
 
                         {/* CONTROLS (Bottom) */}
                         {(status === 'PLAYING' || status === 'PAUSED') && (
@@ -602,11 +691,6 @@
                                              className="w-32 h-32 rounded-full bg-[#ca8a04]/80 border-4 border-brandYellow relative shadow-[4px_4px_0px_0px_rgba(0,0,0,0.5)] touch-none"
                                              onMouseDown={handleJoystickStart}
                                              onTouchStart={handleJoystickStart}
-                                             onMouseMove={handleJoystickMove}
-                                             onTouchMove={handleJoystickMove}
-                                             onMouseUp={handleJoystickEnd}
-                                             onMouseLeave={handleJoystickEnd}
-                                             onTouchEnd={handleJoystickEnd}
                                         >
                                             <div ref={joystickStickRef} className="w-12 h-12 bg-brandRed rounded-full absolute top-1/2 left-1/2 -ml-6 -mt-6 border-2 border-[#fecaca] shadow-lg pointer-events-none" />
                                         </div>
@@ -617,7 +701,24 @@
 
                         {/* SCREENS */}
                         {status !== 'PLAYING' && (
-                            <div className="absolute inset-0 z-40 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm" onClick={(e) => { if (status === 'PAUSED') togglePause(); }}>
+                            <div className={`absolute inset-0 z-40 flex items-center justify-center ${status === 'SPLASH' ? 'bg-brandBlue' : 'bg-black/60 backdrop-blur-sm'}`} onClick={(e) => { if (status === 'PAUSED') togglePause(); }}>
+                                
+                                {/* SPLASH SCREEN (NEW) */}
+                                {status === 'SPLASH' && (
+                                    <div className="absolute inset-0 z-50 bg-brandBlue flex flex-col items-center justify-center cursor-pointer overflow-hidden" onClick={handleSplashClick}>
+                                        <div className="scanline z-10 opacity-20 pointer-events-none"></div>
+                                        
+                                        {/* Logo Principal */}
+                                        <img src={GAME_ASSETS.LOGO} className="w-64 object-contain animate-bounce mb-8 z-20" alt="Logo" />
+                                        
+                                        {/* Texto Start */}
+                                        <p className="absolute bottom-40 text-white text-2xl font-bold animate-pulse text-shadow-retro tracking-widest z-20 w-full text-center">TOCA LA PANTALLA PARA EMPEZAR</p>
+                                        
+                                        {/* Imagined By Logo */}
+                                        <img src={GAME_ASSETS.IMAGINED_BY} className="absolute bottom-8 w-24 object-contain z-20 opacity-80" alt="Imagined by BG" />
+                                    </div>
+                                )}
+
                                 {status === 'PAUSED' && (
                                     <div className="flex flex-col items-center animate-in fade-in zoom-in duration-200 pointer-events-none">
                                         <h2 className="text-6xl text-brandYellow font-bold text-shadow-retro mb-4 animate-pulse">PAUSA</h2>
@@ -626,41 +727,50 @@
                                 )}
 
                                 {status === 'START' && (
-                                    <div className="w-full max-w-sm animate-in zoom-in duration-300" onClick={(e) => e.stopPropagation()}>
-                                        <div className="bg-brandYellow p-1 pixel-clip shadow-[8px_8px_0px_0px_rgba(0,0,0,0.5)]">
-                                            <div className="bg-brandRed p-1 pixel-clip">
-                                                <div className="bg-[#0f172a] p-4 text-center flex flex-col items-center pixel-clip">
-                                                    <img src={GAME_ASSETS.LOGO} alt="Marinero" className="w-40 object-contain mb-4 animate-pulse" />
-                                                    <h3 className="text-brandYellow font-bold text-2xl mb-4 leading-tight text-shadow-retro px-4">¡AYUDA A MATEO Y SUS AMIGOS A LIMPIAR EL MAR!</h3>
-                                                    
-                                                    <p className="text-white text-lg mb-3 text-shadow-retro">Escoge a tu personaje favorito:</p>
-                                                    <div className="grid grid-cols-4 gap-2 mb-2 w-full">
-                                                        <div onClick={() => setSelectedChar('MATEO')} className={`aspect-square bg-[#1e293b] pixel-clip flex items-center justify-center cursor-pointer transition-all border-2 ${selectedChar === 'MATEO' ? 'border-brandYellow bg-[#334155]' : 'border-transparent hover:bg-[#334155]'}`}><img src={GAME_ASSETS.PLAYER_MATEO} className="w-10 h-10 object-contain" /></div>
-                                                        <div onClick={() => setSelectedChar('ANA')} className={`aspect-square bg-[#1e293b] pixel-clip flex items-center justify-center cursor-pointer transition-all border-2 ${selectedChar === 'ANA' ? 'border-brandYellow bg-[#334155]' : 'border-transparent hover:bg-[#334155]'}`}><img src={GAME_ASSETS.PLAYER_ANA} className="w-10 h-10 object-contain" /></div>
-                                                        <div className="aspect-square bg-[#0f172a] border-2 border-[#1e293b] pixel-clip flex items-center justify-center opacity-50"><Lock className="w-4 h-4 text-slate-600" /></div>
-                                                        <div className="aspect-square bg-[#0f172a] border-2 border-[#1e293b] pixel-clip flex items-center justify-center opacity-50"><Lock className="w-4 h-4 text-slate-600" /></div>
-                                                    </div>
-                                                    <div className="text-brandYellow font-bold text-2xl mb-4 text-shadow-retro uppercase tracking-widest">{selectedChar}</div>
+                                    <div className={`absolute -inset-1 z-50 flex flex-col items-center justify-center p-6 text-white w-[calc(100%+8px)] h-[calc(100%+8px)] bg-black/10 backdrop-blur-sm`} onClick={(e) => e.stopPropagation()}>
+                                        
+                                        <img src={GAME_ASSETS.LOGO} alt="Marinero" className="w-48 object-contain mb-6 animate-logo-pulse" />
+                                        
+                                        <h3 className="text-white font-bold text-4xl mb-8 leading-[0.75] text-shadow-retro text-center px-4 tracking-widest">
+                                            ¡AYUDA A MATEO<br />
+                                            Y SUS AMIGOS<br />
+                                            A LIMPIAR EL MAR!
+                                        </h3>
+                                        
+                                        <div className="flex flex-col items-center w-full max-w-sm gap-6">
+                                            
+                                            {/* CHAR SELECTOR */}
+                                            <div className="w-full flex flex-col items-center">
+                                                <p className="text-white text-lg mb-2 text-shadow-retro">Escoge a tu personaje favorito:</p>
+                                                <div className="grid grid-cols-4 gap-3 mb-2">
+                                                    <div onClick={() => setSelectedChar('MATEO')} className={`w-16 h-16 bg-[#1e293b] pixel-clip flex items-center justify-center cursor-pointer transition-all border-4 ${selectedChar === 'MATEO' ? 'border-brandYellow bg-[#334155]' : 'border-transparent hover:bg-[#334155]'}`}><img src={GAME_ASSETS.PLAYER_MATEO} className="w-12 h-12 object-contain" /></div>
+                                                    <div onClick={() => setSelectedChar('ANA')} className={`w-16 h-16 bg-[#1e293b] pixel-clip flex items-center justify-center cursor-pointer transition-all border-4 ${selectedChar === 'ANA' ? 'border-brandYellow bg-[#334155]' : 'border-transparent hover:bg-[#334155]'}`}><img src={GAME_ASSETS.PLAYER_ANA} className="w-12 h-12 object-contain" /></div>
+                                                    <div className="w-16 h-16 bg-[#0f172a] border-4 border-[#1e293b] pixel-clip flex items-center justify-center opacity-50"><Lock className="w-6 h-6 text-slate-600" /></div>
+                                                    <div className="w-16 h-16 bg-[#0f172a] border-4 border-[#1e293b] pixel-clip flex items-center justify-center opacity-50"><Lock className="w-6 h-6 text-slate-600" /></div>
+                                                </div>
+                                                <div className="text-brandYellow font-bold text-2xl text-shadow-retro uppercase tracking-widest">{selectedChar}</div>
+                                            </div>
 
-                                                    <p className="text-white text-base mb-2 text-shadow-retro">Tipo de Control:</p>
-                                                    <div className="flex gap-4 mb-6">
-                                                        <button onClick={() => setControlType('ARROWS')} className={`px-4 py-2 pixel-clip border-2 ${controlType === 'ARROWS' ? 'bg-brandYellow text-brandRed border-white' : 'bg-[#1e293b] text-slate-400 border-transparent'} flex items-center gap-2 transition-all`}>
-                                                            <Move className="w-4 h-4" /> 
-                                                            <span className="text-sm font-bold">FLECHAS</span>
-                                                        </button>
-                                                        <button onClick={() => setControlType('JOYSTICK')} className={`px-4 py-2 pixel-clip border-2 ${controlType === 'JOYSTICK' ? 'bg-brandYellow text-brandRed border-white' : 'bg-[#1e293b] text-slate-400 border-transparent'} flex items-center gap-2 transition-all`}>
-                                                            <Gamepad2 className="w-4 h-4" />
-                                                            <span className="text-sm font-bold">JOYSTICK</span>
-                                                        </button>
-                                                    </div>
-
-                                                    <button onClick={handleStart} className="btn-pixel-wrapper w-16 h-16 group active:translate-y-1 transition-transform">
-                                                        <div className="bg-brandRed p-1 pixel-clip shadow-[4px_4px_0px_0px_#a16207]">
-                                                            <div className="pixel-inner bg-brandYellow w-full h-full text-brandRed pixel-clip flex items-center justify-center group-hover:bg-yellow-300"><Play className="fill-current w-8 h-8" /></div>
-                                                        </div>
+                                            {/* CONTROL SELECTOR */}
+                                            <div className="w-full flex flex-col items-center">
+                                                <p className="text-white text-base mb-2 text-shadow-retro">Tipo de Control:</p>
+                                                <div className="flex gap-4">
+                                                    <button onClick={() => setControlType('ARROWS')} className={`px-4 py-2 pixel-clip border-2 ${controlType === 'ARROWS' ? 'bg-brandYellow text-brandRed border-white' : 'bg-[#1e293b] text-slate-400 border-transparent'} flex items-center gap-2 transition-all`}>
+                                                        <Move className="w-5 h-5" /> 
+                                                        <span className="text-lg font-bold">FLECHAS</span>
+                                                    </button>
+                                                    <button onClick={() => setControlType('JOYSTICK')} className={`px-4 py-2 pixel-clip border-2 ${controlType === 'JOYSTICK' ? 'bg-brandYellow text-brandRed border-white' : 'bg-[#1e293b] text-slate-400 border-transparent'} flex items-center gap-2 transition-all`}>
+                                                        <Gamepad2 className="w-5 h-5" />
+                                                        <span className="text-lg font-bold">JOYSTICK</span>
                                                     </button>
                                                 </div>
                                             </div>
+
+                                            <button onClick={handleStart} className="btn-pixel-wrapper w-20 h-20 group active:translate-y-1 transition-transform mt-4">
+                                                <div className="bg-brandRed p-1 pixel-clip shadow-[4px_4px_0px_0px_#a16207]">
+                                                    <div className="pixel-inner bg-brandYellow w-full h-full text-brandRed pixel-clip flex items-center justify-center group-hover:bg-yellow-300"><Play className="fill-current w-10 h-10" /></div>
+                                                </div>
+                                            </button>
                                         </div>
                                     </div>
                                 )}
@@ -671,11 +781,11 @@
                                             <div className="bg-white p-1 pixel-clip">
                                                 <div className="bg-[#f0f9ff] p-6 text-center flex flex-col items-center pixel-clip">
                                                     <img src={GAME_ASSETS.LOGO} alt="Marinero" className="h-16 object-contain mb-4 animate-bounce" />
-                                                    <h2 className="text-2xl text-brandBlue font-bold mb-4 text-shadow-retro">¡OH NO!</h2>
+                                                    <h2 className="text-4xl text-brandBlue font-bold mb-4 text-shadow-retro">¡OH NO!</h2>
                                                     <div className="w-full bg-brandRed p-1 pixel-clip mb-6 shadow-sm transform -rotate-1">
-                                                        <div className="bg-white p-4 pixel-clip"><div className="text-xs text-slate-500 font-bold uppercase mb-1">Puntuación Final</div><div className="text-4xl font-black text-brandRed text-shadow-retro">{score}</div></div>
+                                                        <div className="bg-white p-4 pixel-clip"><div className="text-xl text-slate-500 font-bold uppercase mb-1">Puntuación Final</div><div className="text-6xl font-black text-brandRed text-shadow-retro">{score}</div></div>
                                                     </div>
-                                                    {gameOverMsg && (<div className="mb-6"><div className="text-brandBlue font-bold text-sm uppercase border-b-2 border-blue-200 pb-1 mb-2">{gameOverMsg.title}</div><p className="text-xs text-slate-600 italic leading-relaxed">"{gameOverMsg.message}"</p></div>)}
+                                                    {gameOverMsg && (<div className="mb-6"><div className="text-brandBlue font-bold text-2xl uppercase border-b-2 border-blue-200 pb-1 mb-2">{gameOverMsg.title}</div><p className="text-xl text-slate-600 italic leading-relaxed">"{gameOverMsg.message}"</p></div>)}
                                                     <button onClick={resetGame} className="btn-pixel-wrapper w-full group active:translate-y-1 transition-transform">
                                                         <div className="bg-white p-1 pixel-clip shadow-[4px_4px_0px_0px_#7f1d1d]"><div className="pixel-inner bg-brandRed py-4 text-white font-bold text-lg pixel-clip flex items-center justify-center gap-2 group-hover:bg-red-600"><RotateCcw className="w-5 h-5" />REINTENTAR</div></div>
                                                     </button>
