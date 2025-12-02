@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Salvando el Mar - Marinero</title>
     
+    <!-- Google Analytics 4 tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-XXXXXXXXXX');
+    </script>
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
@@ -158,46 +167,22 @@
             DECO_ROCK_1: "https://raw.githubusercontent.com/nsanchezBG/MarineroSTSBG/main/roca1.png"
         };
 
-const CUSTOM_MESSAGES = [
-            // Protección de Fauna (Tortugas, Delfines, Aves)
-            { title: "Rescatista de Tortugas", message: "Al quitar esas bolsas, ¡las tortugas nada orgullosas!" },
-            { title: "Amigo del Delfín", message: "Sin basura flotando, el delfín sigue saltando." },
-            { title: "Héroe del Pelícano", message: "Sin plásticos en el pico, el pelícano come rico." },
-            { title: "Defensor del Lobo de Mar", message: "El lobito descansa feliz, sin basura en su nariz." },
-            { title: "Guardián de las Aves", message: "Si limpias la arena, las aves no tienen pena." },
-            { title: "Salvador del Cangrejo", message: "Salvaste al cangrejo de ese plástico viejo." },
-            { title: "Aliado de la Anchoveta", message: "Agua limpia y vital, para nuestro pez nacional." },
-            { title: "Protector de Aletas", message: "Los peces crecen sanos si limpiamos con las manos." },
-            { title: "Cuidador de Ballenas", message: "Un mar sin desechos evita muchas penas." },
-            { title: "Auxilio de la Gaviota", message: "Si recoges la tapita, el ave no se debilita." },
-
-            // Salud del Ecosistema y Agua
-            { title: "Doctor del Océano", message: "Curaste el agua hoy, ¡las gracias te doy!" },
-            { title: "Limpiador de Arrecifes", message: "Si limpias el coral, la vida es fenomenal." },
-            { title: "Héroe de la Espuma", message: "El mar respira mejor con tu gran labor." },
-            { title: "Vigilante de la Marea", message: "Agua transparente, ¡ese es un mar valiente!" },
-            { title: "Experto en Salud Azul", message: "El azul regresa al mar si te pones a limpiar." },
-            { title: "Guardián del Plancton", message: "Microplásticos fuera, ¡la vida prospera!" },
-            { title: "Defensor de las Olas", message: "Las olas rompen feliz sin basura y con barniz." },
-            { title: "Protector del Fondo", message: "Bajo el mar todo brilla si limpias la orilla." },
-            { title: "Escudo del Mar", message: "Proteges la vida, curando al mar su herida." },
-            { title: "Rey del Ecosistema", message: "Limpiar es el tema para salvar el ecosistema." },
-
-            // Acción y Consecuencia (Educativo)
-            { title: "Trome del Reciclaje", message: "Lo que tiras al tacho, no daña al pez, muchacho." },
-            { title: "Capitán Limpieza", message: "El mar no es basurero, ¡tu cuidado es lo primero!" },
-            { title: "Marinero Consciente", message: "Pez sano y sin basura, ¡es salud y frescura!" },
-            { title: "Leyenda del Mar de Grau", message: "Cuidar las 200 millas es la mejor de las maravillas." },
-            { title: "Cazador de Plástico", message: "La botella reciclada ya no contamina nada." },
-            { title: "Salvavidas Ecológico", message: "Sacar esa red vieja, ¡a los peces libres deja!" },
-            { title: "Maestro del Cuidado", message: "Si el mar está aseado, tendremos buen pescado." },
-            { title: "Héroe del Litoral", message: "Tu limpieza ayuda a evitar el daño ambiental." },
-            { title: "Campeón de la Costa", message: "Una costa aseada es una vida salvada." },
-            { title: "Poseidón de la Limpieza", message: "Tu poder es limpiar para la vida conservar." }
+        const CUSTOM_MESSAGES = [
+            { title: "Marinero de Agua Dulce", message: "¡Buen inicio! Pero el mar necesita más limpieza." },
+            { title: "Grumete Reciclador", message: "¡Bien hecho! Esa basura ya no dañará a las tortugas." },
+            { title: "Capitán del Arrecife", message: "¡Increíble! Tu red está llena de buenas acciones." },
+            { title: "Almirante Ecológico", message: "¡El océano te saluda! Una puntuación legendaria." },
+            { title: "Poseidón de la Limpieza", message: "¡Nadie cuida el mar mejor que tú!" }
         ];
 
         const LOGICAL_WIDTH = 450; 
         const LOGICAL_HEIGHT = 800;
+        
+        // NUEVA DEFINICIÓN DE ZONA SEGURA (MARCO MAGENTA)
+        const PLAY_AREA = {
+            TOP: 130,    // Debajo del HUD
+            BOTTOM: 620  // Encima de los controles
+        };
         
         const GRAVITY = 0.25;
         const SWIM_FORCE = -7; 
@@ -262,6 +247,7 @@ const CUSTOM_MESSAGES = [
                 };
             }, []);
             
+            // --- Reset Logic ---
             useEffect(() => {
                  gameState.current = {
                     player: { x: 50, y: LOGICAL_HEIGHT/2, vx: 0, vy: 0, width: 80, height: 80, invincible: 0, bubbleTimer: 0 },
@@ -288,21 +274,26 @@ const CUSTOM_MESSAGES = [
                 if (status === 'START' || status === 'SPLASH') return;
 
                 const fc = frameCountRef.current;
+                
+                // Calcular zona de spawn aleatoria dentro de los nuevos límites
+                const spawnY = () => Math.random() * (PLAY_AREA.BOTTOM - PLAY_AREA.TOP - 80) + PLAY_AREA.TOP;
 
                 if (fc % 100 === 0) { 
                     const types = ['TRASH_BOTTLE', 'TRASH_TIRE', 'TRASH_BAG', 'TRASH_BOOT'];
                     const type = types[Math.floor(Math.random()*types.length)];
-                    state.entities.push({ type, id: Math.random(), x: LOGICAL_WIDTH + 50, y: Math.random() * (LOGICAL_HEIGHT - 300) + 100, w: 60, h: 60, vx: -2 - Math.random(), vy: 0, asset: type });
+                    state.entities.push({ type, id: Math.random(), x: LOGICAL_WIDTH + 50, y: spawnY(), w: 60, h: 60, vx: -2 - Math.random(), vy: 0, asset: type });
                 }
                 if (fc % 180 === 0) { 
                     const types = ['ENEMY_JELLYFISH', 'ENEMY_SHARK'];
                     const type = types[Math.floor(Math.random()*types.length)];
                     const isShark = type === 'ENEMY_SHARK';
-                    state.entities.push({ type, id: Math.random(), x: LOGICAL_WIDTH + 50, y: Math.random() * (LOGICAL_HEIGHT - 300) + 100, w: isShark ? 150 : 60, h: isShark ? 60 : 60, vx: isShark ? -4 - Math.random() : -2, vy: isShark ? 0 : Math.sin(fc/50)*0.5, asset: type });
+                    state.entities.push({ type, id: Math.random(), x: LOGICAL_WIDTH + 50, y: spawnY(), w: isShark ? 150 : 60, h: isShark ? 60 : 60, vx: isShark ? -4 - Math.random() : -2, vy: isShark ? 0 : Math.sin(fc/50)*0.5, asset: type });
                 }
                 if (fc % 600 === 0 && Math.random() > 0.3) {
-                    state.entities.push({ type: 'POWER_UP', id: Math.random(), x: LOGICAL_WIDTH + 50, y: Math.random() * (LOGICAL_HEIGHT - 300) + 100, w: 50, h: 70, vx: -3, vy: Math.sin(fc/20)*1, asset: 'POWER_CAN' });
+                    state.entities.push({ type: 'POWER_UP', id: Math.random(), x: LOGICAL_WIDTH + 50, y: spawnY(), w: 50, h: 70, vx: -3, vy: Math.sin(fc/20)*1, asset: 'POWER_CAN' });
                 }
+                
+                // Decorations spawn at the very bottom, mostly independent of PLAY_AREA but visually consistent
                 if (fc >= nextDecoSpawnRef.current) { 
                     const allDecos = ['DECO_ALGA_1', 'DECO_ALGA_2', 'DECO_ALGA_3', 'DECO_CORAL_1', 'DECO_CORAL_2', 'DECO_CORAL_3', 'DECO_CORAL_4', 'DECO_CORAL_5', 'DECO_ROCK_1'];
                     const assetKey = allDecos[Math.floor(Math.random()*allDecos.length)];
@@ -349,8 +340,10 @@ const CUSTOM_MESSAGES = [
                 player.x += player.vx;
                 player.y += player.vy;
                 
-                if (player.y < 0) { player.y = 0; player.vy = 0; }
-                if (player.y > LOGICAL_HEIGHT - player.height - 40) { player.y = LOGICAL_HEIGHT - player.height - 40; player.vy = 0; }
+                // --- NEW BOUNDARIES (PLAY_AREA) ---
+                if (player.y < PLAY_AREA.TOP) { player.y = PLAY_AREA.TOP; player.vy = 0; }
+                if (player.y > PLAY_AREA.BOTTOM - player.height) { player.y = PLAY_AREA.BOTTOM - player.height; player.vy = 0; }
+                
                 if (player.x < 0) { player.x = 0; player.vx = 0; }
                 if (player.x > LOGICAL_WIDTH - player.width) { player.x = LOGICAL_WIDTH - player.width; player.vx = 0; }
 
@@ -836,8 +829,8 @@ const CUSTOM_MESSAGES = [
                                                         <div className="relative w-full mb-2">
                                                             <img src={GAME_ASSETS.FRAME_RESULT} className="w-full h-auto object-contain pixel-clip" alt="Result Frame" />
                                                             
-                                                            {/* Contenido dentro del Marco - Ajustado al 60% inferior + Padding */}
-                                                            <div className="absolute bottom-0 left-0 right-0 h-[60%] flex flex-col items-center justify-center px-6 pb-4 text-center leading-none">
+                                                            {/* Contenido dentro del Marco - Ajustado al 45% inferior + Padding */}
+                                                            <div className="absolute bottom-0 left-0 right-0 h-[45%] flex flex-col items-center justify-center px-6 pb-4 text-center leading-none">
                                                                 <div className="text-brandBlue font-bold text-3xl uppercase mb-0 leading-none">{gameOverMsg.title}</div>
                                                                 <p className="text-2xl text-slate-600 italic leading-none">"{gameOverMsg.message}"</p>
                                                             </div>
