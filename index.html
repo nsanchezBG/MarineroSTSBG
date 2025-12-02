@@ -6,7 +6,7 @@
     <title>Salvando el Mar - Marinero</title>
     
     <!-- Google Analytics 4 tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-QYW987NG5N"></script>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
     <script>
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
@@ -178,7 +178,6 @@
         const LOGICAL_WIDTH = 450; 
         const LOGICAL_HEIGHT = 800;
         
-        // NUEVA DEFINICIÓN DE ZONA SEGURA (MARCO MAGENTA)
         const PLAY_AREA = {
             TOP: 130,    // Debajo del HUD
             BOTTOM: 620  // Encima de los controles
@@ -271,29 +270,25 @@
                 const keys = keysRef.current;
                 frameCountRef.current++;
                 
+                // Allow drawing background in SPLASH and START
                 if (status === 'START' || status === 'SPLASH') return;
 
                 const fc = frameCountRef.current;
-                
-                // Calcular zona de spawn aleatoria dentro de los nuevos límites
-                const spawnY = () => Math.random() * (PLAY_AREA.BOTTOM - PLAY_AREA.TOP - 80) + PLAY_AREA.TOP;
 
                 if (fc % 100 === 0) { 
                     const types = ['TRASH_BOTTLE', 'TRASH_TIRE', 'TRASH_BAG', 'TRASH_BOOT'];
                     const type = types[Math.floor(Math.random()*types.length)];
-                    state.entities.push({ type, id: Math.random(), x: LOGICAL_WIDTH + 50, y: spawnY(), w: 60, h: 60, vx: -2 - Math.random(), vy: 0, asset: type });
+                    state.entities.push({ type, id: Math.random(), x: LOGICAL_WIDTH + 50, y: Math.random() * (LOGICAL_HEIGHT - 300) + 100, w: 60, h: 60, vx: -2 - Math.random(), vy: 0, asset: type });
                 }
                 if (fc % 180 === 0) { 
                     const types = ['ENEMY_JELLYFISH', 'ENEMY_SHARK'];
                     const type = types[Math.floor(Math.random()*types.length)];
                     const isShark = type === 'ENEMY_SHARK';
-                    state.entities.push({ type, id: Math.random(), x: LOGICAL_WIDTH + 50, y: spawnY(), w: isShark ? 150 : 60, h: isShark ? 60 : 60, vx: isShark ? -4 - Math.random() : -2, vy: isShark ? 0 : Math.sin(fc/50)*0.5, asset: type });
+                    state.entities.push({ type, id: Math.random(), x: LOGICAL_WIDTH + 50, y: Math.random() * (LOGICAL_HEIGHT - 300) + 100, w: isShark ? 150 : 60, h: isShark ? 60 : 60, vx: isShark ? -4 - Math.random() : -2, vy: isShark ? 0 : Math.sin(fc/50)*0.5, asset: type });
                 }
                 if (fc % 600 === 0 && Math.random() > 0.3) {
-                    state.entities.push({ type: 'POWER_UP', id: Math.random(), x: LOGICAL_WIDTH + 50, y: spawnY(), w: 50, h: 70, vx: -3, vy: Math.sin(fc/20)*1, asset: 'POWER_CAN' });
+                    state.entities.push({ type: 'POWER_UP', id: Math.random(), x: LOGICAL_WIDTH + 50, y: Math.random() * (LOGICAL_HEIGHT - 300) + 100, w: 50, h: 70, vx: -3, vy: Math.sin(fc/20)*1, asset: 'POWER_CAN' });
                 }
-                
-                // Decorations spawn at the very bottom, mostly independent of PLAY_AREA but visually consistent
                 if (fc >= nextDecoSpawnRef.current) { 
                     const allDecos = ['DECO_ALGA_1', 'DECO_ALGA_2', 'DECO_ALGA_3', 'DECO_CORAL_1', 'DECO_CORAL_2', 'DECO_CORAL_3', 'DECO_CORAL_4', 'DECO_CORAL_5', 'DECO_ROCK_1'];
                     const assetKey = allDecos[Math.floor(Math.random()*allDecos.length)];
@@ -340,7 +335,6 @@
                 player.x += player.vx;
                 player.y += player.vy;
                 
-                // --- NEW BOUNDARIES (PLAY_AREA) ---
                 if (player.y < PLAY_AREA.TOP) { player.y = PLAY_AREA.TOP; player.vy = 0; }
                 if (player.y > PLAY_AREA.BOTTOM - player.height) { player.y = PLAY_AREA.BOTTOM - player.height; player.vy = 0; }
                 
@@ -478,10 +472,9 @@
             const joystickRef = useRef({ x: 0, y: 0, active: false });
             const joystickStickRef = useRef(null);
             const joystickBaseRef = useRef(null);
-            
-            // Ref to prevent pausing when joystick is released
             const blockPauseRef = useRef(false);
-            
+            const gameStartTime = useRef(0); // GA Time Tracking
+
             const musicRef = useRef(new Audio(GAME_ASSETS.MUSIC_BG));
             const sfxCollectRef = useRef(new Audio(GAME_ASSETS.SFX_COLLECT));
             const sfxExplosionRef = useRef(new Audio(GAME_ASSETS.SFX_EXPLOSION));
@@ -525,43 +518,68 @@
             
             // Logic wrapper for restart to handle state reset
             const restartGame = () => {
-                // NO TRANSITION FOR RESTART (INSTANT)
                 setSessionId(prev => prev + 1);
                 setScore(0);
                 joystickRef.current = { x: 0, y: 0, active: false };
                 blockPauseRef.current = false;
                 if (joystickStickRef.current) joystickStickRef.current.style.transform = `translate(0px, 0px)`;
+                
+                // GA RESTART
+                gameStartTime.current = Date.now();
+                if (window.gtag) {
+                    window.gtag('event', 'game_restart', {
+                        character_name: selectedChar,
+                        control_type: controlType
+                    });
+                }
+
                 setStatus('PLAYING');
             };
 
             const handleStart = useCallback(() => { 
-                // Trigger Transition to PLAYING (Keep transition here)
                 setTransitioning(true);
                 setTimeout(() => {
                     setSessionId(prev => prev + 1); 
                     setScore(0); 
-                    // Reset Joystick
                     joystickRef.current = { x: 0, y: 0, active: false };
                     blockPauseRef.current = false;
                     if (joystickStickRef.current) joystickStickRef.current.style.transform = `translate(0px, 0px)`;
+                    
+                    // GA START
+                    gameStartTime.current = Date.now();
+                    if (window.gtag) {
+                        window.gtag('event', 'game_start', {
+                            character_name: selectedChar,
+                            control_type: controlType
+                        });
+                    }
+
                     setStatus('PLAYING');
                     setTransitioning(false);
                 }, 500);
-            }, []);
+            }, [selectedChar, controlType]);
 
             const handleGameOver = useCallback((finalScore) => { 
-                // NO TRANSITION FOR GAME OVER (INSTANT)
                setStatus('GAME_OVER'); 
                setHighScore(h => Math.max(h, finalScore)); 
                setGameOverMsg(CUSTOM_MESSAGES[Math.floor(Math.random() * CUSTOM_MESSAGES.length)]);
-            }, []);
+               
+               // GA GAME OVER
+               const duration = (Date.now() - gameStartTime.current) / 1000;
+               if (window.gtag) {
+                    window.gtag('event', 'game_complete', {
+                        score: finalScore,
+                        duration_seconds: duration,
+                        character_name: selectedChar
+                    });
+                }
+            }, [selectedChar]);
             
             const togglePause = () => { 
                 if (blockPauseRef.current) return; 
                 if (status === 'PLAYING') setStatus('PAUSED'); else if (status === 'PAUSED') setStatus('PLAYING'); 
             };
             
-            // NEW: Handle Splash Screen Click (Audio Unlock) with Transition
             const handleSplashClick = () => {
                 const music = musicRef.current;
                 music.play().then(() => {
@@ -829,8 +847,8 @@
                                                         <div className="relative w-full mb-2">
                                                             <img src={GAME_ASSETS.FRAME_RESULT} className="w-full h-auto object-contain pixel-clip" alt="Result Frame" />
                                                             
-                                                            {/* Contenido dentro del Marco - Ajustado al 45% inferior + Padding */}
-                                                            <div className="absolute bottom-0 left-0 right-0 h-[45%] flex flex-col items-center justify-center px-6 pb-4 text-center leading-none">
+                                                            {/* Contenido dentro del Marco - Ajustado al 66% inferior (MATEMÁTICAMENTE CENTRADO) */}
+                                                            <div className="absolute bottom-0 left-0 right-0 h-[66%] flex flex-col items-center justify-center px-4 text-center leading-none">
                                                                 <div className="text-brandBlue font-bold text-3xl uppercase mb-0 leading-none">{gameOverMsg.title}</div>
                                                                 <p className="text-2xl text-slate-600 italic leading-none">"{gameOverMsg.message}"</p>
                                                             </div>
